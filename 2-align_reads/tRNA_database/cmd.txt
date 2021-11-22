@@ -1,0 +1,5 @@
+
+Made BLAST database with following command:
+makeblastdb -dbtype prot -in hg19_mature-tRNA.fa -blastdb_version 4
+
+
