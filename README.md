@@ -1,16 +1,14 @@
 # tRNA-charge-seq
 
 Dependencies (installed and in Env):
-* AdapterRemoval
-* vsearch
+* AdapterRemoval (https://adapterremoval.readthedocs.io)
+* Swipe (https://github.com/torognes/swipe)
 
 Dependencies (Python packages):
 * pandas
 * Biopython
 * numpy
-* gzip
 * seaborn
 * matplotlib
-* pathlib
 
 
