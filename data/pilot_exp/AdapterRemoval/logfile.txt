@@ -1,0 +1,36 @@
+Starting subprocess with command:['AdapterRemoval', '--bzip2', '--preserve5p', '--collapse', '--minalignmentlength', '10', '--threads', '8', '--adapter1', 'AGATCGGAAGAGCACACGTCTGAACTCCAGTCACATTACTCGATCTCGTATGCCGTCTTCTGCTTG', '--adapter2', 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGGCTATAGTGTAGATCTCGGTGGTCGCCGTATCATT', '--basename', 'D501-D701', '--file1', '../raw_fastq/L_R1.fastq.bz2', '--file2', '../raw_fastq/L_R2.fastq.bz2']
+Trimming paired end reads ...
+Opening FASTQ file '../raw_fastq/L_R1.fastq.bz2', line numbers start at 1
+Opening FASTQ file '../raw_fastq/L_R2.fastq.bz2', line numbers start at 1
+Processed a total of 575,062 reads in 9.2s; 62,000 reads per second on average ...
+
+****** DONE ******
+
+
+Starting subprocess with command:['AdapterRemoval', '--bzip2', '--preserve5p', '--collapse', '--minalignmentlength', '10', '--threads', '8', '--adapter1', 'AGATCGGAAGAGCACACGTCTGAACTCCAGTCACTCCGGAGAATCTCGTATGCCGTCTTCTGCTTG', '--adapter2', 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGGCTATAGTGTAGATCTCGGTGGTCGCCGTATCATT', '--basename', 'D501-D702', '--file1', '../raw_fastq/A_R1.fastq.bz2', '--file2', '../raw_fastq/A_R2.fastq.bz2']
+Trimming paired end reads ...
+Opening FASTQ file '../raw_fastq/A_R1.fastq.bz2', line numbers start at 1
+Opening FASTQ file '../raw_fastq/A_R2.fastq.bz2', line numbers start at 1
+Processed a total of 619,376 reads in 10.3s; 60,000 reads per second on average ...
+
+****** DONE ******
+
+
+Starting subprocess with command:['AdapterRemoval', '--bzip2', '--preserve5p', '--collapse', '--minalignmentlength', '10', '--threads', '8', '--adapter1', 'AGATCGGAAGAGCACACGTCTGAACTCCAGTCACATTACTCGATCTCGTATGCCGTCTTCTGCTTG', '--adapter2', 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTGCCTCTATGTGTAGATCTCGGTGGTCGCCGTATCATT', '--basename', 'D502-D701', '--file1', '../raw_fastq/Rich_R1.fastq.bz2', '--file2', '../raw_fastq/Rich_R2.fastq.bz2']
+Trimming paired end reads ...
+Opening FASTQ file '../raw_fastq/Rich_R1.fastq.bz2', line numbers start at 1
+Opening FASTQ file '../raw_fastq/Rich_R2.fastq.bz2', line numbers start at 1
+Processed a total of 519,878 reads in 9.1s; 56,000 reads per second on average ...
+
+****** DONE ******
+
+
+Starting subprocess with command:['AdapterRemoval', '--bzip2', '--preserve5p', '--collapse', '--minalignmentlength', '10', '--threads', '8', '--adapter1', 'AGATCGGAAGAGCACACGTCTGAACTCCAGTCACTCCGGAGAATCTCGTATGCCGTCTTCTGCTTG', '--adapter2', 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTGCCTCTATGTGTAGATCTCGGTGGTCGCCGTATCATT', '--basename', 'D502-D702', '--file1', '../raw_fastq/U_R1.fastq.bz2', '--file2', '../raw_fastq/U_R2.fastq.bz2']
+Trimming paired end reads ...
+Opening FASTQ file '../raw_fastq/U_R1.fastq.bz2', line numbers start at 1
+Opening FASTQ file '../raw_fastq/U_R2.fastq.bz2', line numbers start at 1
+Processed a total of 805,048 reads in 11.3s; 71,000 reads per second on average ...
+
+****** DONE ******
+
+

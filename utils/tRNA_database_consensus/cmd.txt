@@ -1,0 +1,15 @@
+
+
+### Sequence clustering ###
+90% ~ 8 mismatches
+--minwordmatches 0 effectively disables any filtering based on k-mer search
+--maxaccepts 0 keeps aligning all sequences even after a match has been found
+--maxrejects 0 keeps aligning all sequences even when no match has been found
+
+vsearch --cluster_fast hg19_mature-tRNA.fa --id 0.9 --centroids hg19_mature-tRNA_centroids.fa --minwordmatches 0 --maxrejects 0 --maxaccepts 0
+
+
+Made BLAST database with following command:
+makeblastdb -dbtype prot -in hg19_mature-tRNA_centroids.fa -blastdb_version 4
+
+
