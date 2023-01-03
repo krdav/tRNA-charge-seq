@@ -1,18 +1,0 @@
-Starting subprocess with command:['AdapterRemoval', '--bzip2', '--preserve5p', '--collapse', '--minalignmentlength', '10', '--threads', '12', '--adapter1', 'AGATCGGAAGAGCACACGTCTGAACTCCAGTCACATTACTCGATCTCGTATGCCGTCTTCTGCTTG', '--adapter2', 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGGCTATAGTGTAGATCTCGGTGGTCGCCGTATCATT', '--basename', 'D501-D701', '--file1', '../raw_fastq/P1_S1_R1_001.fastq.gz', '--file2', '../raw_fastq/P1_S1_R2_001.fastq.gz']
-Trimming paired end reads ...
-Opening FASTQ file '../raw_fastq/P1_S1_R1_001.fastq.gz', line numbers start at 1
-Opening FASTQ file '../raw_fastq/P1_S1_R2_001.fastq.gz', line numbers start at 1
-Processed 1,011,174 reads in 10.5s; 96,000 reads per second ...Processed a total of 1,311,076 reads in 13.6s; 96,000 reads per second on average ...
-
-****** DONE ******
-
-
-Starting subprocess with command:['AdapterRemoval', '--bzip2', '--preserve5p', '--collapse', '--minalignmentlength', '10', '--threads', '12', '--adapter1', 'AGATCGGAAGAGCACACGTCTGAACTCCAGTCACGAGATTCCATCTCGTATGCCGTCTTCTGCTTG', '--adapter2', 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGGCTATAGTGTAGATCTCGGTGGTCGCCGTATCATT', '--basename', 'D501-D704', '--file1', '../raw_fastq/P4_S2_R1_001.fastq.gz', '--file2', '../raw_fastq/P4_S2_R2_001.fastq.gz']
-Trimming paired end reads ...
-Opening FASTQ file '../raw_fastq/P4_S2_R1_001.fastq.gz', line numbers start at 1
-Opening FASTQ file '../raw_fastq/P4_S2_R2_001.fastq.gz', line numbers start at 1
-Processed 1,011,024 reads in 14.8s; 68,000 reads per second ...Processed a total of 1,672,046 reads in 27.5s; 60,000 reads per second on average ...
-
-****** DONE ******
-
-

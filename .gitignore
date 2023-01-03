@@ -18,10 +18,10 @@
 sandbox.ipynb
 
 # Data folder (to big for Github)
-/data/**/*.fasta
-/data/**/*.fa
-/data/**/*.fastq
-/data/**/*.bz2
+/projects/**/*.fasta
+/projects/**/*.fa
+/projects/**/*.fastq
+/projects/**/*.bz2
 /data/**/*.gz
 
 
