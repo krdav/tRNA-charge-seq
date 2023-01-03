@@ -1,0 +1,9 @@
+Starting subprocess with command:['AdapterRemoval', '--bzip2', '--preserve5p', '--collapse', '--minalignmentlength', '10', '--threads', '4', '--minlength', '44', '--adapter1', 'AGATCGGAAGAGCACACGTCTGAACTCCAGTCACATTACTCGATCTCGTATGCCGTCTTCTGCTTG', '--adapter2', 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGGCTATAGTGTAGATCTCGGTGGTCGCCGTATCATT', '--basename', 'D501-D701', '--file1', '/Users/krdav/Google Drive/MCB/Sullivan_lab/tRNA-charge-seq/projects/tRNAseq_third-gen/data/raw_fastq_DSA-10k/P3_R1_DSA-10k.fastq.bz2', '--file2', '/Users/krdav/Google Drive/MCB/Sullivan_lab/tRNA-charge-seq/projects/tRNAseq_third-gen/data/raw_fastq_DSA-10k/P3_R2_DSA-10k.fastq.bz2']
+Trimming paired end reads ...
+Opening FASTQ file '/Users/krdav/Google Drive/MCB/Sullivan_lab/tRNA-charge-seq/projects/tRNAseq_third-gen/data/raw_fastq_DSA-10k/P3_R1_DSA-10k.fastq.bz2', line numbers start at 1
+Opening FASTQ file '/Users/krdav/Google Drive/MCB/Sullivan_lab/tRNA-charge-seq/projects/tRNAseq_third-gen/data/raw_fastq_DSA-10k/P3_R2_DSA-10k.fastq.bz2', line numbers start at 1
+Processed a total of 20,000 reads in 0.8s; 25,000 reads per second on average ...
+
+****** DONE ******
+
+
