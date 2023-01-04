@@ -23,7 +23,6 @@ def index_to_sample_df(sample_df, index_df):
     sample_df['P5_index_seq'] = [index_dict['P5_index'][i] for i in sample_df['P5_index'].values]
     sample_df['P7_index_seq'] = [index_dict['P7_index'][i] for i in sample_df['P7_index'].values]
     sample_df['barcode_seq'] = [index_dict['barcode'][i] for i in sample_df['barcode'].values]
-
     return(sample_df)
 
 
@@ -102,7 +101,10 @@ def downsample_raw_input(sample_df, inp_file_df, NBdir, data_folder, seq_folder,
     inp_file_df['fastq_mate1_filename_new'] = fnam_mate1_lst
     inp_file_df['fastq_mate2_filename_new'] = fnam_mate2_lst
     cols = ['fastq_mate1_filename', 'fastq_mate2_filename', 'fastq_mate1_filename_new', 'fastq_mate2_filename_new']
-    sample_df = sample_df.merge(inp_file_df[cols], on=['fastq_mate1_filename', 'fastq_mate2_filename']).drop(columns=cols[0:2]).rename(columns={cols[2]: cols[0], cols[3]: cols[1]})
+    # Merge:
+    sample_df = sample_df.reset_index() # Preserve original order
+    sample_df = sample_df.merge(inp_file_df[cols], on=['fastq_mate1_filename', 'fastq_mate2_filename']).sort_values(by=['index']).drop(columns=cols[0:2]+['index']).rename(columns={cols[2]: cols[0], cols[3]: cols[1]})
+    sample_df = sample_df.reset_index(drop=True)
     inp_file_df = inp_file_df.drop(columns=cols[0:2]).rename(columns={cols[2]: cols[0], cols[3]: cols[1]})
     return(sample_df, inp_file_df, DS_folder)
 
@@ -161,10 +163,10 @@ class AR_merge():
 
         # Check files exists before starting:
         for _, row in self.inp_file_df.iterrows():
-            self.fnam_mate1 = '{}/{}/{}/{}'.format(NBdir, data_folder, seq_folder, row['fastq_mate1_filename'])
-            self.fnam_mate2 = '{}/{}/{}/{}'.format(NBdir, data_folder, seq_folder, row['fastq_mate2_filename'])
-            assert(os.path.exists(self.fnam_mate1))
-            assert(os.path.exists(self.fnam_mate2))
+            fnam_mate1 = '{}/{}/{}/{}'.format(NBdir, data_folder, seq_folder, row['fastq_mate1_filename'])
+            fnam_mate2 = '{}/{}/{}/{}'.format(NBdir, data_folder, seq_folder, row['fastq_mate2_filename'])
+            assert(os.path.exists(fnam_mate1))
+            assert(os.path.exists(fnam_mate2))
 
     def make_dir(self, overwrite=True):
         # Create folder for files:
@@ -208,13 +210,14 @@ class AR_merge():
         basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
         adapter1 = self.adapter1_tmp.replace('<P7_index>', row['P7_index_seq'])
         adapter2 = self.adapter2_tmp.replace('<P5_index>', row['P5_index_seq'])
-
+        fnam_mate1 = '{}/{}/{}/{}'.format(self.NBdir, self.data_folder, self.seq_folder, row['fastq_mate1_filename'])
+        fnam_mate2 = '{}/{}/{}/{}'.format(self.NBdir, self.data_folder, self.seq_folder, row['fastq_mate2_filename'])
         AR_cmd.extend(['--minlength', str(self.MIN_READ_LEN)])
         AR_cmd.extend(['--adapter1', adapter1])
         AR_cmd.extend(['--adapter2', adapter2])
         AR_cmd.extend(['--basename', basename])
-        AR_cmd.extend(['--file1', '{}'.format(self.fnam_mate1)])
-        AR_cmd.extend(['--file2', '{}'.format(self.fnam_mate2)])
+        AR_cmd.extend(['--file1', '{}'.format(fnam_mate1)])
+        AR_cmd.extend(['--file2', '{}'.format(fnam_mate2)])
 
         # Run AdapterRemoval, collect log in "file":
         with Popen(AR_cmd, stdout=PIPE, stderr=STDOUT) as p, open('{}_logfile.txt'.format(basename), 'a') as file:
@@ -363,17 +366,20 @@ class BC_split():
         self.inp_file_df['N_BC-unmapped'] = Nunmapped_list
         self.inp_file_df['N_sum-check'] = self.inp_file_df['N_BC-mapped'] + self.inp_file_df['N_BC-unmapped']
         self.inp_file_df['percent_BC-mapped'] = self.inp_file_df['N_BC-mapped'].values / self.inp_file_df['N_merged'].values *100
-        # Dump stats as Excel file:
-        self.inp_file_df.to_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs))
 
         # Add stats to sample info dataframe:
         self.sample_df['N_total'] = [Ntot_union[sn] for sn in self.sample_df['sample_name_unique']]
         self.sample_df['N_CC'] = [Ncc_union[sn] for sn in self.sample_df['sample_name_unique']]
         self.sample_df['N_CCA'] = [Ncca_union[sn] for sn in self.sample_df['sample_name_unique']]
         self.sample_df['N_CCA+CC'] = self.sample_df['N_CCA'].values + self.sample_df['N_CC'].values
-        self.sample_df['CCA+CC_percent_total'] = self.sample_df['N_CCA+CC'].values / self.sample_df['N_total'].values *100
-        self.sample_df['percent_CCA'] = self.sample_df['N_CCA'].values / self.sample_df['N_CCA+CC'].values *100
+        # Allow division by zero, in case of small sample:
+        with np.errstate(divide='ignore', invalid='ignore'):
+            self.sample_df['CCA+CC_percent_total'] = self.sample_df['N_CCA+CC'].values / self.sample_df['N_total'].values *100
+            self.sample_df['percent_CCA'] = self.sample_df['N_CCA'].values / self.sample_df['N_CCA+CC'].values *100
+        # Sanity check:
+        assert(self.inp_file_df['N_merged'].sum() - self.inp_file_df['N_BC-unmapped'].sum()) == self.sample_df['N_total'].sum()
         # Dump stats as Excel file:
+        self.inp_file_df.to_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs))
         self.sample_df.to_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs))
 
 
@@ -585,6 +591,125 @@ class BC_analysis():
                     seq_min_dist = window
                     bc_min_dist = bc
         return(seq_min_dist, bc_min_dist, dist_min)
+
+
+
+
+class UMI_trim():
+    '''
+    This class is used to trim off the UMI from each read
+    and add it to the fasta header.
+    
+    The number of observed unique UMIs is also a benchmark of the
+    input amount and potential PCR amplification bias.
+    Assuming no bias in the random nucleotide incorporation rate in the oligo used
+    (which according to IDT is not exactly a perfect assumption, but nevertheless)
+    and assuming no amplification bias (again not a perfect assumption),
+    the expected number of unique UMIs (E_X) can be calculated from the number
+    of possible UMIs (n) and the number of random draws (k).
+    An explanation can be read here:
+    https://stats.stackexchange.com/questions/296005/the-expected-number-of-unique-elements-drawn-with-replacement
+    The formula used to calculate the expected number of unique UMIs:
+    E_X = n*(1-((n-1) / n)**k)
+    Where k = is the number of sequences (draws)
+    and n = to the number of possible UMIs (bins)
+    
+    Given imperfect assumptions about random oligo nucleotides and
+    PCR bias it will be expected that the number observed unique UMIs
+    is lower than the expected number of unique UMI.
+    How much lower, is a usefull metric reported in the stats.
+    '''
+    def __init__(self, sample_df, NBdir, data_folder, BC_dir_abs, UMI_dir):
+        # Calculate the number of possible UMIs,
+        # 9x random nt. (A/G/T/C) and one purine (A/G)
+        self.n_bins = 4**9 * 2
+        self.UMI_len = 10
+        # The 5' purine on the oligo end
+        # turns into a pyrimidine on the read:
+        self.UMI_end = {'T', 'C'}
+        
+        # Input:
+        self.sample_df, self.NBdir, self.data_folder, self.BC_dir_abs, self.UMI_dir = sample_df, NBdir, data_folder, BC_dir_abs, UMI_dir
+
+        # Check files exists before starting:
+        for _, row in self.sample_df.iterrows():
+            mapped_fn = '{}/{}.fastq.bz2'.format(self.BC_dir_abs, row['sample_name_unique'])
+            assert(os.path.exists(mapped_fn))
+
+    def make_dir(self, overwrite=True):
+        # Create folder for files:
+        self.UMI_dir_abs = '{}/{}/{}'.format(self.NBdir, self.data_folder, self.UMI_dir)
+        try:
+            os.mkdir(self.UMI_dir_abs)
+        except:
+            if overwrite:
+                shutil.rmtree(self.UMI_dir_abs)
+                os.mkdir(self.UMI_dir_abs)
+            else:
+                raise Exception('Folder exists and overwrite set to false: {}'.format(self.UMI_dir_abs))
+        return(self.UMI_dir_abs)
+
+    def run_parallel(self, n_jobs=4):
+        # Run parallel:
+        data = list(self.sample_df.iterrows())
+        with WorkerPool(n_jobs=n_jobs) as pool:
+            results = pool.map(self.__trim_file, data)
+        self.__collect_stats(results)
+        return(self.sample_df)
+
+    def run_serial(self):
+        results = [self.__trim_file(index, row) for index, row in self.sample_df.iterrows()]
+        self.__collect_stats(results)
+        return(self.sample_df)
+    
+    def __trim_file(self, index, row):
+        input_fnam = '{}/{}.fastq.bz2'.format(self.BC_dir_abs, row['sample_name_unique'])
+        output_fnam = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
+        output_fnam_untrimmed = '{}/{}_untrimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
+        untrimmed_fh = bz2.open(output_fnam_untrimmed, "wt")
+        
+        UMIs = set()
+        Nseqs = 0
+        with bz2.open(output_fnam, "wt") as output_fh:
+            with bz2.open(input_fnam, "rt") as input_fh:
+                for title, seq, qual in FastqGeneralIterator(input_fh):
+                    umi = seq[0:self.UMI_len]
+                    if umi[-1] in self.UMI_end: # UMI found
+                        UMIs.add(umi)
+                        Nseqs += 1
+                        # Add UMI sequence to title:
+                        title = title + ':' + umi
+                        # Write the trimmed sequence:
+                        output_fh.write("@{}\n{}\n+\n{}\n".format(title, seq[self.UMI_len:], qual[self.UMI_len:]))
+                    else: # UMI not found
+                        # Write the untrimmed sequence if UMI was not found:
+                        untrimmed_fh.write("@{}\n{}\n+\n{}\n".format(title, seq, qual))
+        untrimmed_fh.close()
+        
+        # Calculate and return the observed and expected UMI count:
+        N_umi_obs = len(UMIs)
+        N_umi_exp = self.n_bins*(1-((self.n_bins-1) / self.n_bins)**Nseqs)
+        return([row['sample_name_unique'], Nseqs, N_umi_obs, N_umi_exp])
+
+    def __collect_stats(self, results):
+        # Stats to dataframe:
+        stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'Nseq_UMI', 'N_UMI_observed', 'N_UMI_expected'])
+        # Merge stats with sample info dataframe:
+        self.sample_df = self.sample_df.drop(columns=['Nseq_UMI', 'N_UMI_observed', 'N_UMI_expected'], errors='ignore')
+        self.sample_df = self.sample_df.merge(stats_df, on=['sample_name_unique'])        
+        # Add stats:
+        self.sample_df['percent_seqs_after_UMI_trim'] = self.sample_df['Nseq_UMI'] / self.sample_df['N_total'] * 100
+        self.sample_df['percent_UMI_obs-vs-exp'] = self.sample_df['N_UMI_observed'] / self.sample_df['N_UMI_expected'] * 100
+        self.sample_df = self.sample_df.drop(columns=['Nseq_UMI'])
+        # Dump stats as Excel file:
+        self.sample_df.to_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs))
+
+
+
+
+
+
+
 
 
 
