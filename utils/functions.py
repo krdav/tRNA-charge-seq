@@ -7,6 +7,7 @@ from Bio.SeqIO.QualityIO import FastqGeneralIterator
 import pandas as pd
 import numpy as np
 from mpire import WorkerPool
+import jellyfish
 
 
 
@@ -150,7 +151,7 @@ class AR_merge():
     '''
     This class is used to merge the paired end reads using AdapterRomoval.
     '''
-    def __init__(self, sample_df, inp_file_df, NBdir, data_folder, seq_folder, AdapterRemoval_dir, MIN_READ_LEN, AR_threads=4):
+    def __init__(self, inp_file_df, NBdir, data_folder, seq_folder, AdapterRemoval_dir, MIN_READ_LEN, AR_threads=4):
         # Input:
         self.inp_file_df, self.NBdir, self.data_folder, self.seq_folder, self.AdapterRemoval_dir, self.MIN_READ_LEN = inp_file_df, NBdir, data_folder, seq_folder, AdapterRemoval_dir, MIN_READ_LEN
         # AdapterRomoval input:
@@ -190,7 +191,7 @@ class AR_merge():
         except Exception as err:
             os.chdir(self.NBdir)
             raise err
-    
+
     def run_serial(self):
         os.chdir(self.AdapterRemoval_dir_abs)
         try:
@@ -374,6 +375,217 @@ class BC_split():
         self.sample_df['percent_CCA'] = self.sample_df['N_CCA'].values / self.sample_df['N_CCA+CC'].values *100
         # Dump stats as Excel file:
         self.sample_df.to_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs))
+
+
+
+class Kmer_analysis():
+    '''
+    This class is used to find Kmers at the end of unmapped reads,
+    in order to determine if barcode mapping was efficient.
+    '''
+    def __init__(self, inp_file_df, index_df, BC_dir_abs, k_size=5, overwrite=True):
+        # Input:
+        self.inp_file_df, self.BC_dir_abs, self.k_size = inp_file_df, BC_dir_abs, k_size
+
+        self.index_dict = dict()
+        for t, i, s in zip(index_df['type'].values, index_df['id'].values, index_df['sequence'].values):
+            if t not in self.index_dict:
+                self.index_dict[t] = dict()
+            self.index_dict[t][i] = s
+
+        self.filter_dict = dict()
+        
+        # Check files exists before starting:
+        for _, row in self.inp_file_df.iterrows():
+            basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+            unmapped_fn = '{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename)
+            assert(os.path.exists(unmapped_fn))
+
+        # Create folder for files:
+        self.Kmer_dir_abs = '{}/{}'.format(self.BC_dir_abs, 'Kmer_analysis')
+        try:
+            os.mkdir(self.Kmer_dir_abs)
+        except:
+            if overwrite:
+                shutil.rmtree(self.Kmer_dir_abs)
+                os.mkdir(self.Kmer_dir_abs)
+            else:
+                raise Exception('Folder exists and overwrite set to false: {}'.format(self.Kmer_dir_abs))
+
+    def filter_3p_fasta(self, input_fasta, filter_search_size=7):
+        # Generate a filter composed of the Kmers contained
+        # in the last X nt. of a set of fasta sequences, e.g. human tRNA seqeunces.
+        with open(input_fasta, "r") as seq_fh:
+            for seq_obj in SeqIO.parse(seq_fh, "fasta"):
+                self.filter_dict = self.__add_kmers(self.filter_dict, str(seq_obj.seq)[-filter_search_size:])
+
+    def filter_window_BC(self, filter_window=(0, 11)):
+        # Generate a filter composed of the Kmers contained
+        # in a window of the input barcode sequences,
+        # e.g. constant region of an adapter.
+        for bc, bc_seq in self.index_dict['barcode'].items():
+            self.filter_dict = self.__add_kmers(self.filter_dict, bc_seq[filter_window[0]:filter_window[1]])
+
+    def search_unmapped(self, search_size=13):
+        # Find Kmers and store in dictionary:
+        k_dict_all = dict()
+        for _, row in self.inp_file_df.iterrows():
+            k_dict = dict()
+            basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+            unmapped_fn = '{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename)
+            with bz2.open(unmapped_fn, "rt") as unmapped_fh:
+                for title, seq, qual in FastqGeneralIterator(unmapped_fh):
+                    if len(seq) >= search_size:
+                        k_dict = self.__add_kmers(k_dict, seq[-search_size:])
+            
+            self.__write_stats(k_dict, basename)
+            for kmer, obs in k_dict.items():
+                try:
+                    k_dict_all[kmer] += obs
+                except KeyError:
+                    k_dict_all[kmer] = obs
+
+        kmer_df = self.__write_stats(k_dict, 'ALL', return_df=True)
+        return(kmer_df)
+
+    def __write_stats(self, k_dict, outp_ext, return_df=False):
+        # Rank Kmers by occurence and find closely related adapters: 
+        kmer_df_dat = list()
+        for kmer_seq, count in sorted(k_dict.items(), key=lambda x:x[1], reverse=True):
+            bc_min_dist, dist_min = self.__find_min_dist_bc(kmer_seq)
+            if dist_min < 2:
+                kmer_df_dat.append([kmer_seq, count, dist_min, bc_min_dist])
+            else:
+                kmer_df_dat.append([kmer_seq, count, None, None])
+        kmer_df = pd.DataFrame(kmer_df_dat, columns=['Kmer', 'Count', 'Barcode distance', 'Barcode'])
+        kmer_df.to_excel('{}/{}_unmapped-Kmer-analysis.xlsx'.format(self.Kmer_dir_abs, outp_ext))
+        if return_df:
+            return(kmer_df)
+
+    def __add_kmers(self, k_dict, seq):
+        '''Find Kmers in input sequence and add to dictionary if not filtered.'''
+        for i in range(len(seq) - self.k_size + 1):
+            kmer = seq[i:(i+self.k_size)]
+            if kmer not in self.filter_dict:
+                try:
+                    k_dict[kmer] += 1
+                except KeyError:
+                    k_dict[kmer] = 1
+        return(k_dict)
+
+    def __find_min_dist_bc(self, kmer_seq):
+        '''Search for the Kmers in the adapter sequences.'''
+        dist_min = 999
+        bc_min_dist = ''
+        for bc, bc_seq in self.index_dict['barcode'].items():
+            for i in range(len(bc_seq) - len(kmer_seq) + 1):
+                window = bc_seq[i:(i+len(kmer_seq))]
+                dist = jellyfish.hamming_distance(window, kmer_seq)
+                if dist < dist_min:
+                    dist_min = dist
+                    bc_min_dist = bc
+        return(bc_min_dist, dist_min)
+
+
+
+class BC_analysis():
+    '''
+    This class is used to find barcodes at the end of unmapped reads,
+    in order to determine if barcode mapping was efficient.
+    '''
+    def __init__(self, inp_file_df, index_df, BC_dir_abs, BC_size_3p=5, overwrite=True):
+        # Input:
+        self.inp_file_df, self.BC_dir_abs, self.BC_size_3p = inp_file_df, BC_dir_abs, BC_size_3p
+
+        self.index_dict = dict()
+        for t, i, s in zip(index_df['type'].values, index_df['id'].values, index_df['sequence'].values):
+            if t not in self.index_dict:
+                self.index_dict[t] = dict()
+            self.index_dict[t][i] = s
+        self.bc_list = [seq[-self.BC_size_3p:] for seq in self.index_dict['barcode'].values()]
+        self.bc2name = {seq[-self.BC_size_3p:]: name for name, seq in self.index_dict['barcode'].items()}
+        
+        # Check files exists before starting:
+        for _, row in self.inp_file_df.iterrows():
+            basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+            unmapped_fn = '{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename)
+            assert(os.path.exists(unmapped_fn))
+
+        # Create folder for files:
+        self.BCanalysis_dir_abs = '{}/{}'.format(self.BC_dir_abs, 'BC_analysis')
+        try:
+            os.mkdir(self.BCanalysis_dir_abs)
+        except:
+            if overwrite:
+                shutil.rmtree(self.BCanalysis_dir_abs)
+                os.mkdir(self.BCanalysis_dir_abs)
+            else:
+                raise Exception('Folder exists and overwrite set to false: {}'.format(self.BCanalysis_dir_abs))
+
+    def search_unmapped(self, search_size=13, group_dist=1):
+        # Find closest barcode and store in dictionary:
+        k_dict_all = {bc: {} for bc in self.bc_list}
+        for _, row in self.inp_file_df.iterrows():
+            k_dict = {bc: {} for bc in self.bc_list}
+            basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+            unmapped_fn = '{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename)
+            with bz2.open(unmapped_fn, "rt") as unmapped_fh:
+                for title, seq, qual in FastqGeneralIterator(unmapped_fh):
+                    if len(seq) >= search_size:
+                        seq_min_dist, bc_min_dist, dist_min = self.__find_min_dist_bc(seq[-search_size:])
+                        seq_dist = seq_min_dist + '-' + str(dist_min)
+                        try:
+                            k_dict[bc_min_dist][seq_dist] += 1
+                        except KeyError:
+                            k_dict[bc_min_dist][seq_dist] = 1
+            # Write stats for file:
+            self.__write_stats(k_dict, basename)
+            # Collect stats for all files:
+            for bc in self.bc_list:
+                for dist, obs in k_dict[bc].items():
+                    try:
+                        k_dict_all[bc][dist] += obs
+                    except KeyError:
+                        k_dict_all[bc][dist] = obs
+
+        # Write stats for all files:
+        self.bc_df = self.__write_stats(k_dict, 'ALL', return_df=True)
+        # Group by barcode name and make total count:
+        mask = self.bc_df['Distance'] <= group_dist
+        self.sum_df = self.bc_df.loc[mask, ['Name', 'Count']].groupby('Name').sum().sort_values(by=['Count'], ascending=False).reset_index()
+        self.sum_df.to_excel('{}/{}{}_unmapped-BC-analysis.xlsx'.format(self.BCanalysis_dir_abs, 'ALL-groupby-dist-', group_dist))
+        return(self.sum_df)
+
+    def __write_stats(self, k_dict, outp_ext, return_df=False):
+        # Rank barcodes by occurence and write stats to Excel file:
+        kmer_df_dat = list()
+        for bc in self.bc_list:
+            for seq_dist, obs in k_dict[bc].items():
+                target, dist = seq_dist.split('-')
+                dist = int(dist)
+                kmer_df_dat.append([self.bc2name[bc], bc, target, obs, dist])
+
+        bc_df = pd.DataFrame(kmer_df_dat, columns=['Name', 'Barcode', 'Target', 'Count', 'Distance'])
+        bc_df = bc_df.sort_values(by=['Distance', 'Count', 'Name'], ascending=[True, False, True]).reset_index(drop=True)
+        bc_df.to_excel('{}/{}_unmapped-BC-analysis.xlsx'.format(self.BCanalysis_dir_abs, outp_ext))
+        if return_df:
+            return(bc_df)
+
+    def __find_min_dist_bc(self, seq):
+        '''Search for the closest barcode sequence.'''
+        dist_min = 999
+        seq_min_dist = ''
+        bc_min_dist = ''
+        for bc in self.bc_list:
+            for i in range(len(seq) - self.BC_size_3p + 1):
+                window = seq[i:(i+self.BC_size_3p)]
+                dist = jellyfish.hamming_distance(window, bc)
+                if dist < dist_min:
+                    dist_min = dist
+                    seq_min_dist = window
+                    bc_min_dist = bc
+        return(seq_min_dist, bc_min_dist, dist_min)
+
 
 
 
