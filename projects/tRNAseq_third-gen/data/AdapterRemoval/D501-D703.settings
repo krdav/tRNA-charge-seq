@@ -21,7 +21,7 @@ Trimming 3p: 0
 Trimming Ns: No
 Trimming Phred scores <= 2: No
 Trimming using sliding windows: No
-Minimum genomic length: 44
+Minimum genomic length: 49
 Maximum genomic length: 4294967295
 Collapse overlapping reads: Yes
 Deterministic collapse: No
@@ -33,16 +33,16 @@ Minimum overlap (in case of collapse): 10
 Total number of read pairs: 10000
 Number of unaligned read pairs: 194
 Number of well aligned read pairs: 9806
-Number of discarded mate 1 reads: 159
+Number of discarded mate 1 reads: 348
 Number of singleton mate 1 reads: 0
-Number of discarded mate 2 reads: 159
+Number of discarded mate 2 reads: 348
 Number of singleton mate 2 reads: 0
 Number of reads with adapters[1]: 13126
-Number of full-length collapsed pairs: 9609
+Number of full-length collapsed pairs: 9420
 Number of truncated collapsed pairs: 0
-Number of retained reads: 10073
-Number of retained nucleotides: 838764
-Average length of retained reads: 83.2685
+Number of retained reads: 9884
+Number of retained nucleotides: 830022
+Average length of retained reads: 83.9763
 
 
 [Length distribution]
@@ -91,11 +91,11 @@ Length	Mate1	Mate2	Singleton	Collapsed	CollapsedTruncated	Discarded	All
 41	0	0	0	0	0	12	12
 42	0	0	0	0	0	13	13
 43	0	0	0	0	0	25	25
-44	0	0	0	29	0	0	29
-45	0	0	0	25	0	0	25
-46	0	0	0	49	0	0	49
-47	0	0	0	41	0	0	41
-48	0	0	0	45	0	0	45
+44	0	0	0	0	0	29	29
+45	0	0	0	0	0	25	25
+46	0	0	0	0	0	49	49
+47	0	0	0	0	0	41	41
+48	0	0	0	0	0	45	45
 49	0	0	0	62	0	0	62
 50	0	0	0	108	0	0	108
 51	0	0	0	137	0	0	137

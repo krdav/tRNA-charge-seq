@@ -1,0 +1,5 @@
+Starting subprocess with command:['swipe', '--query', '/Users/krdav/Google Drive/MCB/Sullivan_lab/tRNA-charge-seq/projects/tRNAseq_third-gen/data/UMI_trimmed/40p4_UMI-trimmed.fasta', '--db', '/Users/krdav/Google Drive/MCB/Sullivan_lab/tRNA-charge-seq/utils/tRNA_database/human/hg38-tRNAs.fa', '--out', '40p4_SWalign', '--symtype', '1', '--outfmt', '7', '--num_alignments', '3', '--num_descriptions', '3', '--evalue', '0.000000001', '--num_threads', '12', '--strand', '1', '--matrix', '/Users/krdav/Google Drive/MCB/Sullivan_lab/tRNA-charge-seq/utils/nuc_score-matrix.txt', '-G', '6', '-E', '1']
+
+****** DONE ******
+
+

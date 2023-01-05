@@ -1,4 +1,4 @@
-import sys, os, subprocess, copy, shutil, re, glob, bz2, json, random, resource, warnings
+import sys, os, shutil, bz2, random, resource, warnings, subprocess, copy, re, glob, json
 from subprocess import Popen, PIPE, STDOUT
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -160,6 +160,7 @@ class AR_merge():
         self.adapter1_tmp = 'AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC<P7_index>ATCTCGTATGCCGTCTTCTGCTTG'
         self.adapter2_tmp = 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT<P5_index>GTGTAGATCTCGGTGGTCGCCGTATCATT'
         self.AR_cmd_tmp = ["AdapterRemoval", "--bzip2", "--preserve5p", "--collapse", "--minalignmentlength", "10", "--threads", str(AR_threads)]
+        self.AR_overwrite = True
 
         # Check files exists before starting:
         for _, row in self.inp_file_df.iterrows():
@@ -178,10 +179,11 @@ class AR_merge():
                 shutil.rmtree(self.AdapterRemoval_dir_abs)
                 os.mkdir(self.AdapterRemoval_dir_abs)
             else:
-                raise Exception('Folder exists and overwrite set to false: {}'.format(self.AdapterRemoval_dir))
+                print('Using existing folder because overwrite set to false: {}'.format(self.align_dir_abs))
         return(self.AdapterRemoval_dir_abs)
 
-    def run_parallel(self, n_jobs=4):
+    def run_parallel(self, n_jobs=4, overwrite=True):
+        self.AR_overwrite = overwrite
         os.chdir(self.AdapterRemoval_dir_abs)
         try:
             data = list(self.inp_file_df.iterrows())
@@ -194,7 +196,8 @@ class AR_merge():
             os.chdir(self.NBdir)
             raise err
 
-    def run_serial(self):
+    def run_serial(self, overwrite=True):
+        self.AR_overwrite = overwrite
         os.chdir(self.AdapterRemoval_dir_abs)
         try:
             results = [self.__start_AR(index, row) for index, row in self.inp_file_df.iterrows()]
@@ -208,6 +211,12 @@ class AR_merge():
     def __start_AR(self, index, row):
         AR_cmd = self.AR_cmd_tmp.copy()
         basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+        # Check if output exists, and skip if not overwrite:
+        merged_fastq_fn = '{}.collapsed.bz2'.format(basename)
+        log_fn = '{}_logfile.txt'.format(basename)
+        settings_fn = '{}.settings'.format(basename)
+        if not self.AR_overwrite and os.path.isfile(merged_fastq_fn) and os.path.isfile(log_fn) and os.path.isfile(settings_fn):
+            return(1)
         adapter1 = self.adapter1_tmp.replace('<P7_index>', row['P7_index_seq'])
         adapter2 = self.adapter2_tmp.replace('<P5_index>', row['P5_index_seq'])
         fnam_mate1 = '{}/{}/{}/{}'.format(self.NBdir, self.data_folder, self.seq_folder, row['fastq_mate1_filename'])
@@ -220,7 +229,7 @@ class AR_merge():
         AR_cmd.extend(['--file2', '{}'.format(fnam_mate2)])
 
         # Run AdapterRemoval, collect log in "file":
-        with Popen(AR_cmd, stdout=PIPE, stderr=STDOUT) as p, open('{}_logfile.txt'.format(basename), 'a') as file:
+        with Popen(AR_cmd, stdout=PIPE, stderr=STDOUT) as p, open(log_fn, 'a') as file:
             file.write('Starting subprocess with command:')
             file.write(str(AR_cmd))
             file.write('\n')
@@ -255,7 +264,7 @@ class BC_split():
     def __init__(self, sample_df, inp_file_df, NBdir, data_folder, AdapterRemoval_dir_abs, BC_dir):
         # Input:
         self.sample_df, self.inp_file_df, self.NBdir, self.data_folder, self.AdapterRemoval_dir_abs, self.BC_dir = sample_df, inp_file_df, NBdir, data_folder, AdapterRemoval_dir_abs, BC_dir
-
+        self.BC_overwrite = True
         # Check files exists before starting:
         for _, row in self.inp_file_df.iterrows(): # Pull out each merged fastq file
             basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
@@ -693,14 +702,13 @@ class UMI_trim():
 
     def __collect_stats(self, results):
         # Stats to dataframe:
-        stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'Nseq_UMI', 'N_UMI_observed', 'N_UMI_expected'])
+        stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_after_trim', 'N_UMI_observed', 'N_UMI_expected'])
         # Merge stats with sample info dataframe:
-        self.sample_df = self.sample_df.drop(columns=['Nseq_UMI', 'N_UMI_observed', 'N_UMI_expected'], errors='ignore')
+        self.sample_df = self.sample_df.drop(columns=['N_after_trim', 'N_UMI_observed', 'N_UMI_expected'], errors='ignore')
         self.sample_df = self.sample_df.merge(stats_df, on=['sample_name_unique'])        
         # Add stats:
-        self.sample_df['percent_seqs_after_UMI_trim'] = self.sample_df['Nseq_UMI'] / self.sample_df['N_total'] * 100
+        self.sample_df['percent_seqs_after_UMI_trim'] = self.sample_df['N_after_trim'] / self.sample_df['N_total'] * 100
         self.sample_df['percent_UMI_obs-vs-exp'] = self.sample_df['N_UMI_observed'] / self.sample_df['N_UMI_expected'] * 100
-        self.sample_df = self.sample_df.drop(columns=['Nseq_UMI'])
         # Dump stats as Excel file:
         self.sample_df.to_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs))
 
