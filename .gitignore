@@ -23,7 +23,6 @@ sandbox.ipynb
 /projects/**/*.fastq
 /projects/**/*.bz2
 /data/**/*.gz
-
-
+**/stats_collection
 
 
