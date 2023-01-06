@@ -1,0 +1,5 @@
+sample_name,replicate,barcode,tRNA_annotation,tRNA_annotation_len,unique_annotation,align_5p_idx,align_3p_idx,align_5p_nt,align_3p_nt,5p_cover,3p_cover,5p_non-temp,3p_non-temp,codon,anticodon,amino_acid,count
+25p,3,l11Sp,Homo_sapiens_tRNA-Ala-TGC-3-1,75,True,26,75,C,C,False,True,CA,,GCA,TGC,Ala,1
+25p,3,l11Sp,Homo_sapiens_tRNA-His-GTG-1-1,75,True,1,75,G,C,True,True,ACTG,,CAC,GTG,His,1
+25p,3,l11Sp,Homo_sapiens_tRNA-Ser-CGA-1-1,85,True,1,85,G,C,True,True,CT,,UCG,CGA,Ser,1
+25p,3,l11Sp,Homo_sapiens_tRNA-Thr-AGT-1-1@Homo_sapiens_tRNA-Thr-AGT-5-1,77,False,36,77,G,A,False,True,TG,,ACU,AGT,Thr,1

@@ -16,7 +16,7 @@ import jellyfish
 
 
 
-class SWIPE_align():
+class SWIPE_align:
     '''
     This class is used to align reads to a reference database.
     In the case of tRNAs, a fasta file with known tRNA sequences
@@ -112,8 +112,8 @@ class SWIPE_align():
             return(1)
 
         # Convert reads to fasta as required by Swipe:
-        with bz2.open(trimmed_fn, 'rt') as fh_gz:
-            SeqIO.convert(fh_gz, "fastq", trimmed_fasta_fn, 'fasta')
+        with bz2.open(trimmed_fn, 'rt') as fh_bz:
+            SeqIO.convert(fh_bz, "fastq", trimmed_fasta_fn, 'fasta')
         # Submit the process:
         if self.verbose:
             print('  {}'.format(row['sample_name_unique']), end='')
@@ -132,14 +132,14 @@ class SWIPE_align():
         query_hits, query_nohits = self.__parse_SWIPE_XML(swipe_outfile_xml, sp_tRNA_database)
 
         # Dump unaligned sequences: 
-        with bz2.open(SWnohits_fnam, 'wt', encoding="utf-8") as fh_gz:
+        with bz2.open(SWnohits_fnam, 'wt', encoding="utf-8") as fh_bz:
             for record in SeqIO.parse(trimmed_fasta_fn, "fasta"):
                 if record.id in query_nohits:
-                    print('>{}'.format(record.id), file=fh_gz)
-                    print('{}'.format(record.seq), file=fh_gz)        
+                    print('>{}'.format(record.id), file=fh_bz)
+                    print('{}'.format(record.seq), file=fh_bz)        
         # Dump query_hits as JSON:
-        with bz2.open(SWres_fnam, 'wt', encoding="utf-8") as fh_gz:
-             json.dump(query_hits, fh_gz)
+        with bz2.open(SWres_fnam, 'wt', encoding="utf-8") as fh_bz:
+             json.dump(query_hits, fh_bz)
 
         # Remove tmp files:
         os.remove(trimmed_fasta_fn)
@@ -268,8 +268,8 @@ class SWIPE_align():
                 print('  {}'.format(row['sample_name_unique']), end='')
             SWres_fnam = '{}_SWalign.json.bz2'.format(row['sample_name_unique'])            
             # Read query_hits from JSON:
-            with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as fh_gz:
-                 query_hits = json.load(fh_gz)
+            with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as fh_bz:
+                 query_hits = json.load(fh_bz)
 
             # Calculate stats:
             N_mapped = len(query_hits)
