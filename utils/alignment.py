@@ -30,7 +30,7 @@ class SWIPE_align:
     Because no heuristics are used, the results are guaranteed
     to contain the best alignment, as defined by the alignment score.
     '''
-    def __init__(self, tRNA_database, sample_df, NBdir, data_folder, UMI_dir_abs, align_dir, score_mat, gap_penalty=6, extension_penalty=1, min_score_align=20):
+    def __init__(self, dir_dict, tRNA_database, sample_df, score_mat, gap_penalty=6, extension_penalty=1, min_score_align=20):
         # Swipe command template: 
         self.swipe_cmd_tmp = 'swipe\t--query\tINPUT_FILE\t--db\tDATABASE_FILE\t--out\tOUTPUT_FILE\t--symtype\t1\t--outfmt\t7\t--num_alignments\t3\t--num_descriptions\t3\t--evalue\t0.000000001\t--num_threads\t12\t--strand\t1\t--matrix\tSCORE_MATRIX\t-G\tGAP_PENALTY\t-E\tEXTENSION_PENALTY'
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('SCORE_MATRIX', score_mat)
@@ -39,17 +39,18 @@ class SWIPE_align:
         self.SWIPE_overwrite = True
         self.dry_run = False
         # Input:
-        self.tRNA_database, self.sample_df, self.NBdir, self.data_folder, self.UMI_dir_abs, self.align_dir = tRNA_database, sample_df, NBdir, data_folder, UMI_dir_abs, align_dir
-        self.min_score_align = min_score_align
+        self.tRNA_database, self.sample_df, self.min_score_align = tRNA_database, sample_df, min_score_align
+        self.dir_dict = dir_dict
 
         # Check files exists before starting:
+        self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
         for _, row in self.sample_df.iterrows():
             trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
             assert(os.path.exists(trimmed_fn))
 
     def make_dir(self, overwrite=True):
         # Create folder for files:
-        self.align_dir_abs = '{}/{}/{}'.format(self.NBdir, self.data_folder, self.align_dir)
+        self.align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
         try:
             os.mkdir(self.align_dir_abs)
         except:
@@ -72,10 +73,10 @@ class SWIPE_align:
             with WorkerPool(n_jobs=n_jobs) as pool:
                 results = pool.map(self.__start_SWIPE, data)
             self.__collect_stats()
-            os.chdir(self.NBdir)
+            os.chdir(self.dir_dict['NBdir'])
             return(self.sample_df)
         except Exception as err:
-            os.chdir(self.NBdir)
+            os.chdir(self.dir_dict['NBdir'])
             raise err
 
     def run_serial(self, dry_run=False, overwrite=True, verbose=True):
@@ -89,10 +90,10 @@ class SWIPE_align:
             results = [self.__start_SWIPE(index, row) for index, row in self.sample_df.iterrows()]
             if not dry_run:
                 self.__collect_stats()
-                os.chdir(self.NBdir)
+                os.chdir(self.dir_dict['NBdir'])
             return(self.sample_df)
         except Exception as err:
-            os.chdir(self.NBdir)
+            os.chdir(self.dir_dict['NBdir'])
             raise err
 
     def __start_SWIPE(self, index, row):
@@ -290,7 +291,7 @@ class SWIPE_align:
         self.sample_df = self.sample_df.drop(columns=['N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'Mapping_percent'], errors='ignore')
         self.sample_df = self.sample_df.merge(stats_df, on=['sample_name_unique'])
         # Write stats:
-        self.sample_df.to_excel('alignment_stats.xlsx')
+        self.sample_df.to_excel('sample_stats.xlsx')
 
 
 

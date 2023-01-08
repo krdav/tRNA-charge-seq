@@ -17,22 +17,27 @@ class STATS_collection:
     This class is used to collect statistics from the
     alignment results.
     '''
-    def __init__(self, tRNA_data, sample_df, NBdir, data_folder, UMI_dir_abs, align_dir_abs, stats_dir):
-        self.stats_csv_header = ['readID', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'align_score', 'unique_annotation', 'tRNA_annotation_len', 'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', '5p_cover', '3p_cover', '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC']
-        self.stats_agg_cols = ['sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', 'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', '5p_cover', '3p_cover', '5p_non-temp', '3p_non-temp', 'codon', 'anticodon', 'amino_acid', 'count']
-        self.stats_agg_cols2 = ['sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', 'count']
+    def __init__(self, dir_dict, tRNA_data, sample_df):
+        self.stats_csv_header = ['readID', 'sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'align_score', 'unique_annotation', 'tRNA_annotation_len', 'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', '5p_cover', '3p_cover', '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC']
+        self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'align_score', 'unique_annotation', 'tRNA_annotation_len', 'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', '5p_cover', '3p_cover', '5p_non-temp', '3p_non-temp', 'codon', 'anticodon', 'amino_acid', 'count']
+        self.stats_agg_cols2 = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', 'count']
 
         # Input:
-        self.tRNA_data, self.sample_df, self.NBdir, self.data_folder, self.UMI_dir_abs, self.align_dir_abs, self.stats_dir = tRNA_data, sample_df, NBdir, data_folder, UMI_dir_abs, align_dir_abs, stats_dir
+        self.tRNA_data, self.sample_df = tRNA_data, sample_df
+        self.dir_dict = dir_dict
 
         # Check files exists before starting:
+        self.align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
+        self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
         for _, row in self.sample_df.iterrows():
             SWres_fnam = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
             assert(os.path.exists(SWres_fnam))
+            trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
+            assert(os.path.exists(trimmed_fn))
 
     def make_dir(self, overwrite=True):
         # Create folder for files:
-        self.stats_dir_abs = '{}/{}/{}'.format(self.NBdir, self.data_folder, self.stats_dir)
+        self.stats_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['stats_dir'])
         try:
             os.mkdir(self.stats_dir_abs)
         except:
@@ -92,6 +97,7 @@ class STATS_collection:
                 # Loop through each read in the alignment results:
                 for readID, align_dict in SWres.persistent().items():
                     # Collect all the information:
+                    sample_name_unique = row['sample_name_unique']
                     sample_name = row['sample_name']
                     replicate = row['replicate']
                     barcode = row['barcode']
@@ -125,7 +131,7 @@ class STATS_collection:
                     _3p_bc = readUMI['_3p_bc']
 
                     # Print line to output csv file:
-                    csv_line = ','.join(map(str, [readID, sample_name, replicate, barcode, tRNA_annotation, align_score, unique_annotation, tRNA_annotation_len, align_5p_idx, align_3p_idx, align_5p_nt, align_3p_nt, codon, anticodon, amino_acid, _5p_cover, _3p_cover, _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc]))
+                    csv_line = ','.join(map(str, [readID, sample_name_unique, sample_name, replicate, barcode, tRNA_annotation, align_score, unique_annotation, tRNA_annotation_len, align_5p_idx, align_3p_idx, align_5p_nt, align_3p_nt, codon, anticodon, amino_acid, _5p_cover, _3p_cover, _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc]))
                     print(csv_line, file=stats_fh)
 
         # Free memory from taken by "UMI_info":
@@ -170,7 +176,7 @@ class STATS_collection:
         # and have no 3' non-template bases:
         row_mask = (concat_df['3p_cover']) & (concat_df['3p_non-temp'] == '')
         concat_df = concat_df.loc[row_mask, self.stats_agg_cols2]
-        self.concat_df = concat_df.groupby(self.stats_agg_cols2, as_index=False).agg({"count": "sum"})
+        self.concat_df = concat_df.groupby(self.stats_agg_cols2[:-1], as_index=False).agg({"count": "sum"})
         self.concat_df.to_csv(stats_agg2_fnam, header=True, index=False)
 
 

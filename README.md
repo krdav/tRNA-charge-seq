@@ -18,3 +18,5 @@ Dependencies (Python packages):
 * matplotlib
 
 
+
+Using some newer functions in numpy, so be aware to update python packages.

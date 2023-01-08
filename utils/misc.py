@@ -52,7 +52,7 @@ def index_to_sample_df(sample_df, index_df):
     sample_df['barcode_seq'] = [index_dict['barcode'][i] for i in sample_df['barcode'].values]
     return(sample_df)
 
-def downsample_raw_input(sample_df, inp_file_df, NBdir, data_folder, seq_folder, downsample_absolute=1e5, downsample_fold=False, overwrite=True):
+def downsample_raw_input(sample_df, inp_file_df, NBdir, data_dir, seq_dir, downsample_absolute=1e5, downsample_fold=False, overwrite=True):
     '''
     This functions provides a way of downsampling the input files
     before read processing. This enables the user to test the entire
@@ -61,8 +61,8 @@ def downsample_raw_input(sample_df, inp_file_df, NBdir, data_folder, seq_folder,
     inp_file_df = copy.deepcopy(inp_file_df)
     # Check files exists before starting:
     for index, row in inp_file_df.iterrows():
-        fnam_mate1 = '{}/{}/{}/{}'.format(NBdir, data_folder, seq_folder, row['fastq_mate1_filename'])
-        fnam_mate2 = '{}/{}/{}/{}'.format(NBdir, data_folder, seq_folder, row['fastq_mate2_filename'])
+        fnam_mate1 = '{}/{}/{}/{}'.format(NBdir, data_dir, seq_dir, row['fastq_mate1_filename'])
+        fnam_mate2 = '{}/{}/{}/{}'.format(NBdir, data_dir, seq_dir, row['fastq_mate2_filename'])
         assert(os.path.exists(fnam_mate1))
         assert(os.path.exists(fnam_mate2))
 
@@ -72,18 +72,18 @@ def downsample_raw_input(sample_df, inp_file_df, NBdir, data_folder, seq_folder,
         DS_ext = '_DSA-{}k'.format(round(downsample_absolute // 1000))
     elif downsample_fold:
         DS_ext = '_DSF-{}'.format(round(downsample_fold))
-    DS_folder = seq_folder + DS_ext
+    DS_dir = seq_dir + DS_ext
 
     # Create folder for files:
-    DS_folder_abs = '{}/{}/{}'.format(NBdir, data_folder, DS_folder)
+    DS_dir_abs = '{}/{}/{}'.format(NBdir, data_dir, DS_dir)
     try:
-        os.mkdir(DS_folder_abs)
+        os.mkdir(DS_dir_abs)
     except:
         if overwrite:
-            shutil.rmtree(DS_folder_abs)
-            os.mkdir(DS_folder_abs)
+            shutil.rmtree(DS_dir_abs)
+            os.mkdir(DS_dir_abs)
         else:
-            raise Exception('Folder exists and overwrite set to false: {}'.format(DS_folder_abs))
+            raise Exception('Folder exists and overwrite set to false: {}'.format(DS_dir_abs))
 
     # Do the downsampling:
     fnam_mate1_lst = list()
@@ -91,8 +91,8 @@ def downsample_raw_input(sample_df, inp_file_df, NBdir, data_folder, seq_folder,
     for index, row in inp_file_df.iterrows():
         fnam_mate1 = row['fastq_mate1_filename']
         fnam_mate2 = row['fastq_mate2_filename']
-        fnam_mate1_in = '{}/{}/{}/{}'.format(NBdir, data_folder, seq_folder, fnam_mate1)
-        fnam_mate2_in = '{}/{}/{}/{}'.format(NBdir, data_folder, seq_folder, fnam_mate2)
+        fnam_mate1_in = '{}/{}/{}/{}'.format(NBdir, data_dir, seq_dir, fnam_mate1)
+        fnam_mate2_in = '{}/{}/{}/{}'.format(NBdir, data_dir, seq_dir, fnam_mate2)
         mate1_in = bz2.open(fnam_mate1_in, "rt")
         mate2_in = bz2.open(fnam_mate2_in, "rt")
 
@@ -100,8 +100,8 @@ def downsample_raw_input(sample_df, inp_file_df, NBdir, data_folder, seq_folder,
         fnam_mate1_lst.append(fnam_mate1_DS)
         fnam_mate2_DS = '.'.join(fnam_mate2.split('.')[0:-2]) + DS_ext + '.' + '.'.join(fnam_mate2.split('.')[-2:])
         fnam_mate2_lst.append(fnam_mate2_DS)
-        fnam_mate1_out = '{}/{}/{}/{}'.format(NBdir, data_folder, DS_folder, fnam_mate1_DS)
-        fnam_mate2_out = '{}/{}/{}/{}'.format(NBdir, data_folder, DS_folder, fnam_mate2_DS)
+        fnam_mate1_out = '{}/{}/{}/{}'.format(NBdir, data_dir, DS_dir, fnam_mate1_DS)
+        fnam_mate2_out = '{}/{}/{}/{}'.format(NBdir, data_dir, DS_dir, fnam_mate2_DS)
         mate1_out = bz2.open(fnam_mate1_out, "wt")
         mate2_out = bz2.open(fnam_mate2_out, "wt")
 
@@ -132,7 +132,7 @@ def downsample_raw_input(sample_df, inp_file_df, NBdir, data_folder, seq_folder,
     sample_df = sample_df.merge(inp_file_df[cols], on=['fastq_mate1_filename', 'fastq_mate2_filename']).sort_values(by=['index']).drop(columns=cols[0:2]+['index']).rename(columns={cols[2]: cols[0], cols[3]: cols[1]})
     sample_df = sample_df.reset_index(drop=True)
     inp_file_df = inp_file_df.drop(columns=cols[0:2]).rename(columns={cols[2]: cols[0], cols[3]: cols[1]})
-    return(sample_df, inp_file_df, DS_folder)
+    return(sample_df, inp_file_df, DS_dir)
 
 def fast_fasta_count(filename):
     '''See: https://stackoverflow.com/a/9631635'''

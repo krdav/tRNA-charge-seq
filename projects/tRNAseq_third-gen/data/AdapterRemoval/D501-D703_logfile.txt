@@ -2,7 +2,7 @@ Starting subprocess with command:['AdapterRemoval', '--bzip2', '--preserve5p', '
 Trimming paired end reads ...
 Opening FASTQ file '/Users/krdav/Google Drive/MCB/Sullivan_lab/tRNA-charge-seq/projects/tRNAseq_third-gen/data/raw_fastq_DSA-10k/P3_R1_DSA-10k.fastq.bz2', line numbers start at 1
 Opening FASTQ file '/Users/krdav/Google Drive/MCB/Sullivan_lab/tRNA-charge-seq/projects/tRNAseq_third-gen/data/raw_fastq_DSA-10k/P3_R2_DSA-10k.fastq.bz2', line numbers start at 1
-Processed a total of 20,000 reads in 0.7s; 30,000 reads per second on average ...
+Processed a total of 20,000 reads in 0.6s; 33,000 reads per second on average ...
 
 ****** DONE ******
 

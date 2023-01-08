@@ -16,9 +16,10 @@ class AR_merge:
     '''
     This class is used to merge the paired end reads using AdapterRomoval.
     '''
-    def __init__(self, inp_file_df, NBdir, data_folder, seq_folder, AdapterRemoval_dir, MIN_READ_LEN, AR_threads=4):
+    def __init__(self, dir_dict, inp_file_df, MIN_READ_LEN, AR_threads=4):
         # Input:
-        self.inp_file_df, self.NBdir, self.data_folder, self.seq_folder, self.AdapterRemoval_dir, self.MIN_READ_LEN = inp_file_df, NBdir, data_folder, seq_folder, AdapterRemoval_dir, MIN_READ_LEN
+        self.inp_file_df, self.MIN_READ_LEN = inp_file_df, MIN_READ_LEN
+        self.dir_dict = dir_dict
         # AdapterRomoval input:
         self.adapter1_tmp = 'AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC<P7_index>ATCTCGTATGCCGTCTTCTGCTTG'
         self.adapter2_tmp = 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT<P5_index>GTGTAGATCTCGGTGGTCGCCGTATCATT'
@@ -26,15 +27,16 @@ class AR_merge:
         self.AR_overwrite = True
 
         # Check files exists before starting:
+        self.seq_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['seq_dir'])
         for _, row in self.inp_file_df.iterrows():
-            fnam_mate1 = '{}/{}/{}/{}'.format(NBdir, data_folder, seq_folder, row['fastq_mate1_filename'])
-            fnam_mate2 = '{}/{}/{}/{}'.format(NBdir, data_folder, seq_folder, row['fastq_mate2_filename'])
+            fnam_mate1 = '{}/{}'.format(self.seq_dir_abs, row['fastq_mate1_filename'])
+            fnam_mate2 = '{}/{}'.format(self.seq_dir_abs, row['fastq_mate2_filename'])
             assert(os.path.exists(fnam_mate1))
             assert(os.path.exists(fnam_mate2))
 
     def make_dir(self, overwrite=True):
         # Create folder for files:
-        self.AdapterRemoval_dir_abs = '{}/{}/{}'.format(self.NBdir, self.data_folder, self.AdapterRemoval_dir)
+        self.AdapterRemoval_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['AdapterRemoval_dir'])
         try:
             os.mkdir(self.AdapterRemoval_dir_abs)
         except:
@@ -42,7 +44,7 @@ class AR_merge:
                 shutil.rmtree(self.AdapterRemoval_dir_abs)
                 os.mkdir(self.AdapterRemoval_dir_abs)
             else:
-                print('Using existing folder because overwrite set to false: {}'.format(self.align_dir_abs))
+                print('Using existing folder because overwrite set to false: {}'.format(self.AdapterRemoval_dir_abs))
         return(self.AdapterRemoval_dir_abs)
 
     def run_parallel(self, n_jobs=4, overwrite=True):
@@ -53,10 +55,10 @@ class AR_merge:
             with WorkerPool(n_jobs=n_jobs) as pool:
                 results = pool.map(self.__start_AR, data)
             self.__collect_stats()
-            os.chdir(self.NBdir)
+            os.chdir(self.dir_dict['NBdir'])
             return(self.inp_file_df)
         except Exception as err:
-            os.chdir(self.NBdir)
+            os.chdir(self.dir_dict['NBdir'])
             raise err
 
     def run_serial(self, overwrite=True):
@@ -65,10 +67,10 @@ class AR_merge:
         try:
             results = [self.__start_AR(index, row) for index, row in self.inp_file_df.iterrows()]
             self.__collect_stats()
-            os.chdir(self.NBdir)
+            os.chdir(self.dir_dict['NBdir'])
             return(self.inp_file_df)
         except Exception as err:
-            os.chdir(self.NBdir)
+            os.chdir(self.dir_dict['NBdir'])
             raise err
 
     def __start_AR(self, index, row):
@@ -82,8 +84,8 @@ class AR_merge:
             return(1)
         adapter1 = self.adapter1_tmp.replace('<P7_index>', row['P7_index_seq'])
         adapter2 = self.adapter2_tmp.replace('<P5_index>', row['P5_index_seq'])
-        fnam_mate1 = '{}/{}/{}/{}'.format(self.NBdir, self.data_folder, self.seq_folder, row['fastq_mate1_filename'])
-        fnam_mate2 = '{}/{}/{}/{}'.format(self.NBdir, self.data_folder, self.seq_folder, row['fastq_mate2_filename'])
+        fnam_mate1 = '{}/{}'.format(self.seq_dir_abs, row['fastq_mate1_filename'])
+        fnam_mate2 = '{}/{}'.format(self.seq_dir_abs, row['fastq_mate2_filename'])
         AR_cmd.extend(['--minlength', str(self.MIN_READ_LEN)])
         AR_cmd.extend(['--adapter1', adapter1])
         AR_cmd.extend(['--adapter2', adapter2])
@@ -124,19 +126,21 @@ class BC_split:
     '''
     This class is used to split fastq files based on barcodes.
     '''
-    def __init__(self, sample_df, inp_file_df, NBdir, data_folder, AdapterRemoval_dir_abs, BC_dir):
+    def __init__(self, dir_dict, sample_df, inp_file_df):
         # Input:
-        self.sample_df, self.inp_file_df, self.NBdir, self.data_folder, self.AdapterRemoval_dir_abs, self.BC_dir = sample_df, inp_file_df, NBdir, data_folder, AdapterRemoval_dir_abs, BC_dir
+        self.sample_df, self.inp_file_df = sample_df, inp_file_df
+        self.dir_dict = dir_dict
         self.BC_overwrite = True
         # Check files exists before starting:
+        self.AdapterRemoval_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['AdapterRemoval_dir'])
         for _, row in self.inp_file_df.iterrows(): # Pull out each merged fastq file
             basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
-            merged_fastq_fn = '{}/{}.collapsed.bz2'.format(AdapterRemoval_dir_abs, basename)
+            merged_fastq_fn = '{}/{}.collapsed.bz2'.format(self.AdapterRemoval_dir_abs, basename)
             assert(os.path.exists(merged_fastq_fn))
 
     def make_dir(self, overwrite=True):
         # Create folder for files:
-        self.BC_dir_abs = '{}/{}/{}'.format(self.NBdir, self.data_folder, self.BC_dir)
+        self.BC_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['BC_dir'])
         try:
             os.mkdir(self.BC_dir_abs)
         except:
@@ -261,9 +265,10 @@ class Kmer_analysis:
     This class is used to find Kmers at the end of unmapped reads,
     in order to determine if barcode mapping was efficient.
     '''
-    def __init__(self, inp_file_df, index_df, BC_dir_abs, k_size=5, overwrite=True):
+    def __init__(self, dir_dict, inp_file_df, index_df, k_size=5, overwrite=True):
         # Input:
-        self.inp_file_df, self.BC_dir_abs, self.k_size = inp_file_df, BC_dir_abs, k_size
+        self.inp_file_df, self.k_size = inp_file_df, k_size
+        self.dir_dict = dir_dict
 
         self.index_dict = dict()
         for t, i, s in zip(index_df['type'].values, index_df['id'].values, index_df['sequence'].values):
@@ -274,6 +279,7 @@ class Kmer_analysis:
         self.filter_dict = dict()
         
         # Check files exists before starting:
+        self.BC_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['BC_dir'])
         for _, row in self.inp_file_df.iterrows():
             basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
             unmapped_fn = '{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename)
@@ -371,9 +377,10 @@ class BC_analysis:
     This class is used to find barcodes at the end of unmapped reads,
     in order to determine if barcode mapping was efficient.
     '''
-    def __init__(self, inp_file_df, index_df, BC_dir_abs, BC_size_3p=5, overwrite=True):
+    def __init__(self, dir_dict, inp_file_df, index_df, BC_size_3p=5, overwrite=True):
         # Input:
-        self.inp_file_df, self.BC_dir_abs, self.BC_size_3p = inp_file_df, BC_dir_abs, BC_size_3p
+        self.inp_file_df, self.BC_size_3p = inp_file_df, BC_size_3p
+        self.dir_dict = dir_dict
 
         self.index_dict = dict()
         for t, i, s in zip(index_df['type'].values, index_df['id'].values, index_df['sequence'].values):
@@ -384,6 +391,7 @@ class BC_analysis:
         self.bc2name = {seq[-self.BC_size_3p:]: name for name, seq in self.index_dict['barcode'].items()}
         
         # Check files exists before starting:
+        self.BC_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['BC_dir'])
         for _, row in self.inp_file_df.iterrows():
             basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
             unmapped_fn = '{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename)
@@ -491,7 +499,7 @@ class UMI_trim:
     is lower than the expected number of unique UMI.
     How much lower, is a usefull metric reported in the stats.
     '''
-    def __init__(self, sample_df, NBdir, data_folder, BC_dir_abs, UMI_dir):
+    def __init__(self, dir_dict, sample_df):
         # Calculate the number of possible UMIs,
         # 9x random nt. (A/G/T/C) and one purine (A/G)
         self.n_bins = 4**9 * 2
@@ -501,16 +509,18 @@ class UMI_trim:
         self.UMI_end = {'T', 'C'}
         
         # Input:
-        self.sample_df, self.NBdir, self.data_folder, self.BC_dir_abs, self.UMI_dir = sample_df, NBdir, data_folder, BC_dir_abs, UMI_dir
+        self.sample_df = sample_df
+        self.dir_dict = dir_dict
 
         # Check files exists before starting:
+        self.BC_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['BC_dir'])
         for _, row in self.sample_df.iterrows():
             mapped_fn = '{}/{}.fastq.bz2'.format(self.BC_dir_abs, row['sample_name_unique'])
             assert(os.path.exists(mapped_fn))
 
     def make_dir(self, overwrite=True):
         # Create folder for files:
-        self.UMI_dir_abs = '{}/{}/{}'.format(self.NBdir, self.data_folder, self.UMI_dir)
+        self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
         try:
             os.mkdir(self.UMI_dir_abs)
         except:
