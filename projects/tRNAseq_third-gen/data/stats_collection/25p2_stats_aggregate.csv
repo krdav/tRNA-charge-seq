@@ -1,5 +1,0 @@
-sample_name_unique,sample_name,replicate,barcode,tRNA_annotation,align_score,unique_annotation,tRNA_annotation_len,align_5p_idx,align_3p_idx,align_5p_nt,align_3p_nt,5p_cover,3p_cover,5p_non-temp,3p_non-temp,codon,anticodon,amino_acid,count
-25p2,25p,2,l10Sp,Homo_sapiens_tRNA-Arg-CCT-1-1,33,True,76,40,76,C,C,False,True,AC,,AGG,CCT,Arg,1
-25p2,25p,2,l10Sp,Homo_sapiens_tRNA-Arg-TCG-3-1,63,True,76,1,76,G,C,True,True,TTT,,CGA,TCG,Arg,1
-25p2,25p,2,l10Sp,Homo_sapiens_tRNA-Lys-CTT-2-1,61,True,76,15,76,G,C,False,True,TTC,,AAG,CTT,Lys,1
-25p2,25p,2,l10Sp,Homo_sapiens_tRNA-Val-CAC-1-1,69,True,76,1,76,G,C,True,True,TTT,,GUG,CAC,Val,1
