@@ -130,7 +130,6 @@ class BC_split:
         # Input:
         self.sample_df, self.inp_file_df = sample_df, inp_file_df
         self.dir_dict = dir_dict
-        self.BC_overwrite = True
         # Check files exists before starting:
         self.AdapterRemoval_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['AdapterRemoval_dir'])
         for _, row in self.inp_file_df.iterrows(): # Pull out each merged fastq file
@@ -148,30 +147,40 @@ class BC_split:
                 shutil.rmtree(self.BC_dir_abs)
                 os.mkdir(self.BC_dir_abs)
             else:
-                raise Exception('Folder exists and overwrite set to false: {}'.format(self.BC_dir_abs))
+                print('Using existing folder because overwrite set to false: {}'.format(self.BC_dir_abs))
         return(self.BC_dir_abs)
 
-    def run_parallel(self, n_jobs=4):
+    def run_parallel(self, n_jobs=4, overwrite=True):
         # Must check that not too many file handles are opened at the same time:
         max_fh = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
         fh_div = len(self.sample_df)*3 // max_fh
         try:
             assert(fh_div == 0)
         except:
-            raise('Large number of samples, could cause problems with too many open filehandles under parallel processing. Either switch to serial processing, or implement parallel processing in smaller chunks.')
+            raise Exception('Large number of samples, could cause problems with too many open filehandles under parallel processing. Either switch to serial processing, or implement parallel processing in smaller chunks.')
 
-        # Run parallel:
-        data = list(self.inp_file_df.iterrows())
-        with WorkerPool(n_jobs=n_jobs) as pool:
-            results = pool.map(self.__split_file, data)
-        self.__collect_stats(results)
+        if overwrite:
+            # Run parallel:
+            data = list(self.inp_file_df.iterrows())
+            with WorkerPool(n_jobs=n_jobs) as pool:
+                results = pool.map(self.__split_file, data)
+            self.__collect_stats(results)
+        else:
+            self.inp_file_df = pd.read_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs))
+            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs))
+
         return(self.sample_df, self.inp_file_df)
 
-    def run_serial(self):
-        results = [self.__split_file(index, row) for index, row in self.inp_file_df.iterrows()]
-        self.__collect_stats(results)
+    def run_serial(self, overwrite=True):
+        if overwrite:
+            results = [self.__split_file(index, row) for index, row in self.inp_file_df.iterrows()]
+            self.__collect_stats(results)
+        else:
+            self.inp_file_df = pd.read_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs))
+            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs))
+
         return(self.sample_df, self.inp_file_df)
-    
+
     def __split_file(self, index, row):
         basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
         merged_fastq_fn = '{}/{}.collapsed.bz2'.format(self.AdapterRemoval_dir_abs, basename)
@@ -406,9 +415,13 @@ class BC_analysis:
                 shutil.rmtree(self.BCanalysis_dir_abs)
                 os.mkdir(self.BCanalysis_dir_abs)
             else:
-                raise Exception('Folder exists and overwrite set to false: {}'.format(self.BCanalysis_dir_abs))
+                print('Using existing folder because overwrite set to false: {}'.format(self.BCanalysis_dir_abs))
 
-    def search_unmapped(self, search_size=13, group_dist=1):
+    def search_unmapped(self, search_size=13, group_dist=1, overwrite=True):
+        if not overwrite:
+            self.sum_df = pd.read_excel('{}/{}{}_unmapped-BC-analysis.xlsx'.format(self.BCanalysis_dir_abs, 'ALL-groupby-dist-', group_dist))
+            return(self.sum_df)
+
         # Find closest barcode and store in dictionary:
         k_dict_all = {bc: {} for bc in self.bc_list}
         for _, row in self.inp_file_df.iterrows():
@@ -528,20 +541,26 @@ class UMI_trim:
                 shutil.rmtree(self.UMI_dir_abs)
                 os.mkdir(self.UMI_dir_abs)
             else:
-                raise Exception('Folder exists and overwrite set to false: {}'.format(self.UMI_dir_abs))
+                print('Using existing folder because overwrite set to false: {}'.format(self.UMI_dir_abs))
         return(self.UMI_dir_abs)
 
-    def run_parallel(self, n_jobs=4):
-        # Run parallel:
-        data = list(self.sample_df.iterrows())
-        with WorkerPool(n_jobs=n_jobs) as pool:
-            results = pool.map(self.__trim_file, data)
-        self.__collect_stats(results)
+    def run_parallel(self, n_jobs=4, overwrite=True):
+        if overwrite:
+            # Run parallel:
+            data = list(self.sample_df.iterrows())
+            with WorkerPool(n_jobs=n_jobs) as pool:
+                results = pool.map(self.__trim_file, data)
+            self.__collect_stats(results)
+        else:
+            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs))
         return(self.sample_df)
 
-    def run_serial(self):
-        results = [self.__trim_file(index, row) for index, row in self.sample_df.iterrows()]
-        self.__collect_stats(results)
+    def run_serial(self, overwrite=True):
+        if overwrite:
+            results = [self.__trim_file(index, row) for index, row in self.sample_df.iterrows()]
+            self.__collect_stats(results)
+        else:
+            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs))
         return(self.sample_df)
     
     def __trim_file(self, index, row):
@@ -584,16 +603,6 @@ class UMI_trim:
         self.sample_df['percent_UMI_obs-vs-exp'] = self.sample_df['N_UMI_observed'] / self.sample_df['N_UMI_expected'] * 100
         # Dump stats as Excel file:
         self.sample_df.to_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs))
-
-
-
-
-
-
-
-
-
-
 
 
 
