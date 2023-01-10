@@ -30,9 +30,8 @@ class STATS_collection:
         self.align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
         self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
         for _, row in self.sample_df.iterrows():
-            SWres_fnam = '{}/{}_SWalign.json'.format(self.align_dir_abs, row['sample_name_unique'])
-            SWres_fnam_bz2 = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
-            assert(os.path.exists(SWres_fnam) or os.path.exists(SWres_fnam_bz2))
+            SWres_fnam = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
+            assert(os.path.exists(SWres_fnam))
             trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
             assert(os.path.exists(trimmed_fn))
 
@@ -85,76 +84,63 @@ class STATS_collection:
                     'seq': seq
                 }
 
-        SWres_fnam = '{}/{}_SWalign.json'.format(self.align_dir_abs, row['sample_name_unique'])
-        SWres_fnam_bz2 = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
-        if os.path.isfile(SWres_fnam):
-            SWres_fh = open(SWres_fnam, 'r', encoding="utf-8")
-        else:
-            SWres_fh = bz2.open(SWres_fnam, 'rt', encoding="utf-8")
-        stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
-        stats_agg_fnam = '{}/{}_stats_aggregate.csv'.format(self.stats_dir_abs, row['sample_name_unique'])  
-        # Parse JSON data as a stream,
-        # i.e. as a transient dict-like object
-        SWres = json_stream.load(SWres_fh)
-        with bz2.open(stats_fnam, 'wt') as stats_fh:
-            # Print header to stats CSV file:
-            print(','.join(self.stats_csv_header), file=stats_fh)
-            # Loop through each read in the alignment results:
-            for readID, align_dict in SWres.persistent().items():
-                # Skip reads that were not aligned:
-                if not align_dict['aligned']:
-                    continue
+        SWres_fnam = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
+        with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
+            stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
+            stats_agg_fnam = '{}/{}_stats_aggregate.csv'.format(self.stats_dir_abs, row['sample_name_unique'])  
+            # Parse JSON data as a stream,
+            # i.e. as a transient dict-like object
+            SWres = json_stream.load(SWres_fh)
+            with bz2.open(stats_fnam, 'wt') as stats_fh:
+                # Print header to stats CSV file:
+                print(','.join(self.stats_csv_header), file=stats_fh)
+                # Loop through each read in the alignment results:
+                for readID, align_dict in SWres.persistent().items():
+                    # Skip reads that were not aligned:
+                    if not align_dict['aligned']:
+                        continue
 
-                # Collect all the information:
-                sample_name_unique = row['sample_name_unique']
-                sample_name = row['sample_name']
-                replicate = row['replicate']
-                barcode = row['barcode']
-                tRNA_annotation = align_dict['name']
-                tRNA_annotation_first = tRNA_annotation.split('@')[0]
-                align_score = align_dict['score']
-                unique_annotation = '@' not in tRNA_annotation
-                tRNA_annotation_len = self.tRNA_data[tRNA_annotation_first]['len']
-                align_5p_idx, align_3p_idx = align_dict['dpos'][0]
-                align_5p_nt = align_dict['qseq'][0]
-                align_3p_nt = align_dict['qseq'][-1]
+                    # Collect all the information:
+                    sample_name_unique = row['sample_name_unique']
+                    sample_name = row['sample_name']
+                    replicate = row['replicate']
+                    barcode = row['barcode']
+                    tRNA_annotation = align_dict['name']
+                    tRNA_annotation_first = tRNA_annotation.split('@')[0]
+                    align_score = align_dict['score']
+                    unique_annotation = '@' not in tRNA_annotation
+                    tRNA_annotation_len = self.tRNA_data[tRNA_annotation_first]['len']
+                    align_5p_idx, align_3p_idx = align_dict['dpos'][0]
+                    align_5p_nt = align_dict['qseq'][0]
+                    align_3p_nt = align_dict['qseq'][-1]
 
-                # Move index for reads with 3' cleaved A:
-                if align_3p_idx == (tRNA_annotation_len - 1) and align_3p_nt == 'C':
-                    align_3p_idx += 1
-                codon = self.tRNA_data[tRNA_annotation_first]['codon']
-                anticodon = self.tRNA_data[tRNA_annotation_first]['anticodon']
-                amino_acid = self.tRNA_data[tRNA_annotation_first]['amino_acid']
-                _5p_cover = align_5p_idx == 1
-                _3p_cover = align_3p_idx == tRNA_annotation_len
+                    # Move index for reads with 3' cleaved A:
+                    if align_3p_idx == (tRNA_annotation_len - 1) and align_3p_nt == 'C':
+                        align_3p_idx += 1
+                    codon = self.tRNA_data[tRNA_annotation_first]['codon']
+                    anticodon = self.tRNA_data[tRNA_annotation_first]['anticodon']
+                    amino_acid = self.tRNA_data[tRNA_annotation_first]['amino_acid']
+                    _5p_cover = align_5p_idx == 1
+                    _3p_cover = align_3p_idx == tRNA_annotation_len
 
-                # Extract non-template bases from UMI processed reads:
-                try:
-                    readUMI = UMI_info[readID]
-                except KeyError:
-                    raise Exception('Read ID ({}) not found among UMI trimmed sequences. Did any of the fastq headers change such that there is a mismatch between headers in the alignment json and those in the trimmed UMIs?'.format(readID))
-                qpos = align_dict['qpos'][0]
-                _5p_non_temp = readUMI['seq'][0:(qpos[0]-1)]
-                _3p_non_temp = readUMI['seq'][qpos[1]:]
-                _5p_umi = readUMI['_5p_umi']
-                _3p_bc = readUMI['_3p_bc']
+                    # Extract non-template bases from UMI processed reads:
+                    try:
+                        readUMI = UMI_info[readID]
+                    except KeyError:
+                        raise Exception('Read ID ({}) not found among UMI trimmed sequences. Did any of the fastq headers change such that there is a mismatch between headers in the alignment json and those in the trimmed UMIs?'.format(readID))
+                    qpos = align_dict['qpos'][0]
+                    _5p_non_temp = readUMI['seq'][0:(qpos[0]-1)]
+                    _3p_non_temp = readUMI['seq'][qpos[1]:]
+                    _5p_umi = readUMI['_5p_umi']
+                    _3p_bc = readUMI['_3p_bc']
 
-                # Print line to output csv file:
-                csv_line = ','.join(map(str, [readID, sample_name_unique, sample_name, replicate, barcode, tRNA_annotation, align_score, unique_annotation, tRNA_annotation_len, align_5p_idx, align_3p_idx, align_5p_nt, align_3p_nt, codon, anticodon, amino_acid, _5p_cover, _3p_cover, _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc]))
-                print(csv_line, file=stats_fh)
-        SWres_fh.close()
+                    # Print line to output csv file:
+                    csv_line = ','.join(map(str, [readID, sample_name_unique, sample_name, replicate, barcode, tRNA_annotation, align_score, unique_annotation, tRNA_annotation_len, align_5p_idx, align_3p_idx, align_5p_nt, align_3p_nt, codon, anticodon, amino_acid, _5p_cover, _3p_cover, _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc]))
+                    print(csv_line, file=stats_fh)
 
         # Free memory from taken by "UMI_info":
         del UMI_info
         gc.collect()
-
-        # Now we are done, compress the files:
-        SWres_fnam_bz2 = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
-        if not os.path.isfile(SWres_fnam_bz2):
-            with open(SWres_fnam, 'rb', encoding="utf-8") as SWres_in:
-                with bz2.open(SWres_fnam_bz2, 'wb', encoding="utf-8") as SWres_out:
-                    shutil.copyfileobj(SWres_in, SWres_out)
-        os.remove(SWres_fnam)
 
         # Filter data and aggregate to count charged/uncharged tRNAs
         # Read stats from stats CSV file:

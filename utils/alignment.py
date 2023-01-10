@@ -69,11 +69,16 @@ class SWIPE_align:
             print('Running Swipe on:', end='')
         os.chdir(self.align_dir_abs)
         try:
-            # Run parallel:
+            # Run SWIPE in parallel:
             data = list(self.sample_df.iterrows())
             with WorkerPool(n_jobs=n_jobs) as pool:
-                results = pool.map(self.__start_SWIPE, data)
-            self.__collect_stats()
+                swipe_return = pool.map(self.__start_SWIPE, data)
+            # Collect results in parallel:
+            if self.verbose:
+                print('\nCollecting alignment statistics, from sample:', end='')
+            with WorkerPool(n_jobs=n_jobs) as pool:
+                results = pool.map(self.__collect_stats, data)
+            self.__write_stats(results)
             os.chdir(self.dir_dict['NBdir'])
             return(self.sample_df)
         except Exception as err:
@@ -88,10 +93,14 @@ class SWIPE_align:
             print('Running Swipe on:', end='')
         os.chdir(self.align_dir_abs)
         try:
-            results = [self.__start_SWIPE(index, row) for index, row in self.sample_df.iterrows()]
+            swipe_return = [self.__start_SWIPE(index, row) for index, row in self.sample_df.iterrows()]
+            # Collect results:
             if not dry_run:
-                self.__collect_stats()
-                os.chdir(self.dir_dict['NBdir'])
+                if self.verbose:
+                    print('\nCollecting alignment statistics, from sample:', end='')
+                results = [self.__collect_stats(index, row) for index, row in self.sample_df.iterrows()]
+                self.__write_stats(results)
+            os.chdir(self.dir_dict['NBdir'])
             return(self.sample_df)
         except Exception as err:
             os.chdir(self.dir_dict['NBdir'])
@@ -108,7 +117,7 @@ class SWIPE_align:
             return(1)
 
         # Skip, if results file has already been made and no overwrite:
-        SWres_fnam = '{}_SWalign.json'.format(row['sample_name_unique'])
+        SWres_fnam = '{}_SWalign.json.bz2'.format(row['sample_name_unique'])
         SWnohits_fnam = '{}_SWalign-nohits.fasta.bz2'.format(row['sample_name_unique'])
         if not self.SWIPE_overwrite and os.path.isfile(SWres_fnam) and os.path.isfile(SWnohits_fnam):
             return(1)
@@ -133,7 +142,7 @@ class SWIPE_align:
         # Read XML file as a streamable generator:
         json_stream = self.__parse_SWIPE_XML(swipe_outfile_xml, sp_tRNA_database)
         # Dump query_hits as JSON. For now uncompressed:
-        with open(SWres_fnam, 'w', encoding="utf-8") as fh:
+        with bz2.open(SWres_fnam, 'wt', encoding="utf-8") as fh:
             json.dump(json_stream, fh)
 
         # Remove tmp files:
@@ -168,6 +177,9 @@ class SWIPE_align:
                 to_file.write(xml_last_line)
         return(swipe_outfile_xml)
 
+    # Use decorator to define this as a streamable dict
+    # to avoid loading all into memory when writing to JSON.
+    # See: https://pypi.org/project/json-stream/
     @streamable_dict
     def __parse_SWIPE_XML(self, swipe_outfile_xml, sp_tRNA_database):
         # Read the database IDs and use them to verify alignment results:
@@ -259,65 +271,61 @@ class SWIPE_align:
                 pickup = True
                 high_score = -999
 
-    def __collect_stats(self):
+    def __collect_stats(self,  index, row):
         # Collect stats about the alignment:
         if self.verbose:
-            print('\nCollecting alignment statistics, from sample:', end='')
-        stats = list()
-        for _, row in self.sample_df.iterrows():
-            if self.verbose:
-                print('  {}'.format(row['sample_name_unique']), end='')
+            print('  {}'.format(row['sample_name_unique']), end='')
 
-            # Collect information:
-            query_nohits = set()
-            N_mapped = 0
-            N_mult_mapped = 0
-            # Read query_hits from JSON:
-            SWres_fnam = '{}_SWalign.json'.format(row['sample_name_unique'])
-            with open(SWres_fnam, 'r', encoding="utf-8") as SWres_fh:
-                # Parse JSON data as a stream,
-                # i.e. as a transient dict-like object
-                SWres = json_stream.load(SWres_fh)
-                for readID, align_dict in SWres.persistent().items():
-                    if not align_dict['aligned']:
-                        query_nohits.add(readID)
-                    else:
-                        N_mapped += 1
-                        if '@' in align_dict['name']:
-                            N_mult_mapped += 1
+        # Collect information:
+        query_nohits = set()
+        N_mapped = 0
+        N_mult_mapped = 0
+        # Read query_hits from JSON:
+        SWres_fnam = '{}_SWalign.json.bz2'.format(row['sample_name_unique'])
+        with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
+            # Parse JSON data as a stream,
+            # i.e. as a transient dict-like object
+            SWres = json_stream.load(SWres_fh)
+            for readID, align_dict in SWres.persistent().items():
+                if not align_dict['aligned']:
+                    query_nohits.add(readID)
+                else:
+                    N_mapped += 1
+                    if '@' in align_dict['name']:
+                        N_mult_mapped += 1
 
-            # Calculate stats:
-            if row['N_after_trim'] == 0:
-                map_p = 0
-            else:
-                map_p = N_mapped / row['N_after_trim'] * 100
-            # Multiple mappings have fasta IDs merged with "@":
-            if N_mapped == 0:
-                P_ma = 0
-            else:
-                P_ma = N_mult_mapped / N_mapped * 100
-            P_sa = 100 - P_ma
-            
-            stats.append([row['sample_name_unique'], N_mapped, P_sa, P_ma, map_p])
+        # Calculate stats:
+        if row['N_after_trim'] == 0:
+            map_p = 0
+        else:
+            map_p = N_mapped / row['N_after_trim'] * 100
+        # Multiple mappings have fasta IDs merged with "@":
+        if N_mapped == 0:
+            P_ma = 0
+        else:
+            P_ma = N_mult_mapped / N_mapped * 100
+        P_sa = 100 - P_ma
 
-            # Dump unaligned sequences:
-            SWnohits_fnam = '{}_SWalign-nohits.fasta.bz2'.format(row['sample_name_unique'])
-            trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
-            with bz2.open(SWnohits_fnam, 'wt', encoding="utf-8") as fh_out:
-                # Convert reads to fasta as required by Swipe:
-                with bz2.open(trimmed_fn, 'rt') as fh_in:
-                    for title, seq, qual in FastqGeneralIterator(fh_in):
-                        seq_id = title.split()[0]
-                        if seq_id in query_nohits:
-                            fh_out.write(">{}\n{}\n".format(title, seq))
+        # Dump unaligned sequences:
+        SWnohits_fnam = '{}_SWalign-nohits.fasta.bz2'.format(row['sample_name_unique'])
+        trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
+        with bz2.open(SWnohits_fnam, 'wt', encoding="utf-8") as fh_out:
+            # Convert reads to fasta as required by Swipe:
+            with bz2.open(trimmed_fn, 'rt') as fh_in:
+                for title, seq, qual in FastqGeneralIterator(fh_in):
+                    seq_id = title.split()[0]
+                    if seq_id in query_nohits:
+                        fh_out.write(">{}\n{}\n".format(title, seq))
 
-        stats_df = pd.DataFrame(stats, columns=['sample_name_unique', 'N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'Mapping_percent'])
+        return([row['sample_name_unique'], N_mapped, P_sa, P_ma, map_p])
+
+    def __write_stats(self, results):
+        stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'Mapping_percent'])
         # Merge stats with sample info dataframe:
         self.sample_df = self.sample_df.drop(columns=['N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'Mapping_percent'], errors='ignore')
         self.sample_df = self.sample_df.merge(stats_df, on=['sample_name_unique'])
         # Write stats:
         self.sample_df.to_excel('sample_stats.xlsx')
-
 
 
 def indices(lst, element):
@@ -329,5 +337,4 @@ def indices(lst, element):
         except ValueError:
             return result
         result.append(offset)
-
 
