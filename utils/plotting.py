@@ -396,9 +396,9 @@ class TRNA_plot:
         with bz2.open(stats_fnam, 'rt', encoding="utf-8") as stats_fh:
             sample_stats = pd.read_csv(stats_fh, keep_default_na=False)
         try:
-            counts_mat = lm.alignment_to_matrix(sample_stats['5p_UMI'].values)
-            plot_data = [counts_mat, row['sample_name_unique'], row['N_mapped'], round(row['percent_UMI_obs-vs-exp'])]
-            title = 'Sample: {}, logo from {} obs, {} % of obs vs exp'.format(row['sample_name_unique'], row['N_mapped'], round(row['percent_UMI_obs-vs-exp']))
+            UMI_mask = sample_stats['5p_UMI'] != ''
+            counts_mat = lm.alignment_to_matrix(sample_stats[UMI_mask]['5p_UMI'].values)
+            title = 'Sample: {}, logo from {} obs (excluding common seqs), {} % of obs vs exp'.format(row['sample_name_unique'], UMI_mask.sum(), round(row['percent_UMI_obs-vs-exp']))
         except:
             counts_mat = False
             title = ''

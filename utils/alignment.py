@@ -44,7 +44,6 @@ class SWIPE_align:
         self.dir_dict = dir_dict
         self.common_seqs_fnam = common_seqs
         self.common_seqs_dict = dict() # map common sequences to index
-        self.common_seqs_obs = dict() # count common sequences for each sample
 
         # Check files exists before starting:
         self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
