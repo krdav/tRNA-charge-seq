@@ -85,9 +85,9 @@ class STATS_collection:
                 }
 
         SWres_fnam = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
-        stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
-        stats_agg_fnam = '{}/{}_stats_aggregate.csv'.format(self.stats_dir_abs, row['sample_name_unique'])  
         with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
+            stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
+            stats_agg_fnam = '{}/{}_stats_aggregate.csv'.format(self.stats_dir_abs, row['sample_name_unique'])  
             # Parse JSON data as a stream,
             # i.e. as a transient dict-like object
             SWres = json_stream.load(SWres_fh)
@@ -96,6 +96,10 @@ class STATS_collection:
                 print(','.join(self.stats_csv_header), file=stats_fh)
                 # Loop through each read in the alignment results:
                 for readID, align_dict in SWres.persistent().items():
+                    # Skip reads that were not aligned:
+                    if not align_dict['aligned']:
+                        continue
+
                     # Collect all the information:
                     sample_name_unique = row['sample_name_unique']
                     sample_name = row['sample_name']

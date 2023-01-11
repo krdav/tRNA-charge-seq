@@ -166,8 +166,8 @@ class BC_split:
                 results = pool.map(self.__split_file, data)
             self.__collect_stats(results)
         else:
-            self.inp_file_df = pd.read_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs))
-            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs))
+            self.inp_file_df = pd.read_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
+            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
 
         return(self.sample_df, self.inp_file_df)
 
@@ -176,8 +176,8 @@ class BC_split:
             results = [self.__split_file(index, row) for index, row in self.inp_file_df.iterrows()]
             self.__collect_stats(results)
         else:
-            self.inp_file_df = pd.read_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs))
-            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs))
+            self.inp_file_df = pd.read_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
+            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
 
         return(self.sample_df, self.inp_file_df)
 
@@ -419,7 +419,7 @@ class BC_analysis:
 
     def search_unmapped(self, search_size=13, group_dist=1, overwrite=True):
         if not overwrite:
-            self.sum_df = pd.read_excel('{}/{}{}_unmapped-BC-analysis.xlsx'.format(self.BCanalysis_dir_abs, 'ALL-groupby-dist-', group_dist))
+            self.sum_df = pd.read_excel('{}/{}{}_unmapped-BC-analysis.xlsx'.format(self.BCanalysis_dir_abs, 'ALL-groupby-dist-', group_dist), index_col=0)
             return(self.sum_df)
 
         # Find closest barcode and store in dictionary:
@@ -552,7 +552,7 @@ class UMI_trim:
                 results = pool.map(self.__trim_file, data)
             self.__collect_stats(results)
         else:
-            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs))
+            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs), index_col=0)
         return(self.sample_df)
 
     def run_serial(self, overwrite=True):
@@ -560,7 +560,7 @@ class UMI_trim:
             results = [self.__trim_file(index, row) for index, row in self.sample_df.iterrows()]
             self.__collect_stats(results)
         else:
-            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs))
+            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs), index_col=0)
         return(self.sample_df)
     
     def __trim_file(self, index, row):

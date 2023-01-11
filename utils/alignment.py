@@ -8,7 +8,8 @@ import pandas as pd
 import numpy as np
 from mpire import WorkerPool
 import jellyfish
-
+from json_stream import streamable_dict
+import json_stream
 
 
 
@@ -30,7 +31,7 @@ class SWIPE_align:
     Because no heuristics are used, the results are guaranteed
     to contain the best alignment, as defined by the alignment score.
     '''
-    def __init__(self, dir_dict, tRNA_database, sample_df, score_mat, gap_penalty=6, extension_penalty=1, min_score_align=20):
+    def __init__(self, dir_dict, tRNA_database, sample_df, score_mat, gap_penalty=6, extension_penalty=1, min_score_align=20, common_seqs=None):
         # Swipe command template: 
         self.swipe_cmd_tmp = 'swipe\t--query\tINPUT_FILE\t--db\tDATABASE_FILE\t--out\tOUTPUT_FILE\t--symtype\t1\t--outfmt\t7\t--num_alignments\t3\t--num_descriptions\t3\t--evalue\t0.000000001\t--num_threads\t12\t--strand\t1\t--matrix\tSCORE_MATRIX\t-G\tGAP_PENALTY\t-E\tEXTENSION_PENALTY'
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('SCORE_MATRIX', score_mat)
@@ -41,12 +42,38 @@ class SWIPE_align:
         # Input:
         self.tRNA_database, self.sample_df, self.min_score_align = tRNA_database, sample_df, min_score_align
         self.dir_dict = dir_dict
+        self.common_seqs_fnam = common_seqs
+        self.common_seqs_dict = dict() # map common sequences to index
+        self.common_seqs_obs = dict() # count common sequences for each sample
 
         # Check files exists before starting:
         self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
         for _, row in self.sample_df.iterrows():
             trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
             assert(os.path.exists(trimmed_fn))
+
+        # If using common sequences, check the input format and existence,
+        # then read into dictionary:
+        if self.common_seqs_fnam is not None:
+            # We can only allow one species if using common sequences.
+            # Multiple species would require running the alignment on common sequences
+            # several times, defeating the purpose, but also making the code much
+            # more complicated.
+            sp_set = set(self.sample_df['species'].values)
+            if len(sp_set) > 1:
+                raise Exception('Only one species allowed in sample sheet when using common sequences.')
+            self.common_seqs_sp = list(sp_set)[0]
+
+            print('Using common sequences to prevent duplicated alignment.')
+            assert(os.path.exists(self.common_seqs_fnam))
+            assert(self.common_seqs_fnam[-4:] == '.bz2')
+            with bz2.open(self.common_seqs_fnam, "rt") as input_fh:
+                for ridx, record in enumerate(SeqIO.parse(input_fh, "fasta")):
+                    seq = str(record.seq)
+                    assert(ridx == int(record.id))
+                    assert(not seq in self.common_seqs_dict)
+                    self.common_seqs_dict[seq] = ridx
+            self.Ncommon = len(self.common_seqs_dict)
 
     def make_dir(self, overwrite=True):
         # Create folder for files:
@@ -68,16 +95,30 @@ class SWIPE_align:
             print('Running Swipe on:', end='')
         os.chdir(self.align_dir_abs)
         try:
-            # Run parallel:
+            # Run SWIPE in parallel:
             data = list(self.sample_df.iterrows())
+            if not self.common_seqs_fnam is None:
+                data.append((0, 'common-seqs'))
+                self.__prep_common()
             with WorkerPool(n_jobs=n_jobs) as pool:
-                results = pool.map(self.__start_SWIPE, data)
-            self.__collect_stats()
+                swipe_return = pool.map(self.__start_SWIPE, data)
+            if not self.common_seqs_fnam is None:
+                os.remove(self.common_seqs_fnam[:-4])
+            # Collect results in parallel:
+            if self.verbose:
+                print('\nCollecting alignment statistics, from sample:', end='')
+            with WorkerPool(n_jobs=n_jobs) as pool:
+                results = pool.map(self.__collect_stats, data)
+            self.__write_stats(results)
             os.chdir(self.dir_dict['NBdir'])
             return(self.sample_df)
         except Exception as err:
             os.chdir(self.dir_dict['NBdir'])
             raise err
+    
+    '''
+    Currently, I do not want to support serial run, instead use n_jobs=1.
+    Keeping this legacy code because it can be usefull for error handling.
 
     def run_serial(self, dry_run=False, overwrite=True, verbose=True):
         self.dry_run = dry_run
@@ -87,38 +128,75 @@ class SWIPE_align:
             print('Running Swipe on:', end='')
         os.chdir(self.align_dir_abs)
         try:
-            results = [self.__start_SWIPE(index, row) for index, row in self.sample_df.iterrows()]
+            swipe_return = [self.__start_SWIPE(index, row) for index, row in self.sample_df.iterrows()]
+            # Collect results:
             if not dry_run:
-                self.__collect_stats()
-                os.chdir(self.dir_dict['NBdir'])
+                if self.verbose:
+                    print('\nCollecting alignment statistics, from sample:', end='')
+                results = [self.__collect_stats(index, row) for index, row in self.sample_df.iterrows()]
+                self.__write_stats(results)
+            os.chdir(self.dir_dict['NBdir'])
             return(self.sample_df)
         except Exception as err:
             os.chdir(self.dir_dict['NBdir'])
             raise err
+    '''
+
+    def __prep_common(self):
+        # Convert reads to uncompressed fasta as required by Swipe:
+        with bz2.open(self.common_seqs_fnam, 'rb') as fh_in:
+            with open(self.common_seqs_fnam[:-4], 'wb') as fh_out:
+                shutil.copyfileobj(fh_in, fh_out)
 
     def __start_SWIPE(self, index, row):
         # Generate Swipe command line:
-        sp_tRNA_database = self.tRNA_database[row['species']]
-        trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
-        trimmed_fasta_fn = trimmed_fn[:-10] + '.fasta'
-        swipe_cmd, swipe_outfile = self.__make_SWIPE_cmd(sp_tRNA_database, trimmed_fasta_fn, row['sample_name_unique'])
+        if type(row) == str:  # special case for common sequences
+            sample_name_unique = 'common-seqs'
+            sp_tRNA_database = self.tRNA_database[self.common_seqs_sp]
+            swipe_cmd, swipe_outfile = self.__make_SWIPE_cmd(sp_tRNA_database, self.common_seqs_fnam[:-4], sample_name_unique)
+        else:
+            sp_tRNA_database = self.tRNA_database[row['species']]
+            sample_name_unique = row['sample_name_unique']
+            trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, sample_name_unique)
+            trimmed_fasta_fn = trimmed_fn[:-10] + '.fasta'
+            swipe_cmd, swipe_outfile = self.__make_SWIPE_cmd(sp_tRNA_database, trimmed_fasta_fn, sample_name_unique)
         if self.dry_run:
             print('Swipe cmd: {}'.format(' '.join(swipe_cmd)))
             return(1)
 
         # Skip, if results file has already been made and no overwrite:
-        SWres_fnam = '{}_SWalign.json.bz2'.format(row['sample_name_unique'])
-        SWnohits_fnam = '{}_SWalign-nohits.fasta.bz2'.format(row['sample_name_unique'])
+        SWres_fnam = '{}_SWalign.json.bz2'.format(sample_name_unique)
+        SWnohits_fnam = '{}_SWalign-nohits.fasta.bz2'.format(sample_name_unique)
         if not self.SWIPE_overwrite and os.path.isfile(SWres_fnam) and os.path.isfile(SWnohits_fnam):
             return(1)
 
-        # Convert reads to fasta as required by Swipe:
-        with bz2.open(trimmed_fn, 'rt') as fh_bz:
-            SeqIO.convert(fh_bz, "fastq", trimmed_fasta_fn, 'fasta')
+        # Prepare sequences for SWIPE:
+        if type(row) == str:
+            pass # common sequences have already been prepared
+        elif not self.common_seqs_fnam is None:
+            # Count the number of times a common sequence is observed:
+            common_obs = np.zeros(self.Ncommon)
+            with bz2.open(trimmed_fn, 'rt') as fh_in:
+                with open(trimmed_fasta_fn, 'wt') as fh_out:
+                    for title, seq, qual in FastqGeneralIterator(fh_in):
+                        if seq in self.common_seqs_dict: # Count commont sequence
+                            seq_idx = self.common_seqs_dict[seq]
+                            common_obs[seq_idx] += 1
+                        else: # Write sequence not found in common
+                            fh_out.write('>{}\n{}\n'.format(title, seq))
+            # Write the common sequence observations to a file:
+            common_obs_fn = '{}_common-seq-obs.json'.format(sample_name_unique)
+            with open(common_obs_fn, 'w') as fh_out:
+                json.dump(common_obs.tolist(), fh_out)
+        else: # do not use common sequences
+            # Convert reads to fasta as required by Swipe:
+            with bz2.open(trimmed_fn, 'rt') as fh_bz:
+                SeqIO.convert(fh_bz, "fastq", trimmed_fasta_fn, 'fasta')
+
         # Submit the process:
         if self.verbose:
-            print('  {}'.format(row['sample_name_unique']), end='')
-        log_fn = '{}_logfile.txt'.format(row['sample_name_unique'])
+            print('  {}'.format(sample_name_unique), end='')
+        log_fn = '{}_logfile.txt'.format(sample_name_unique)
         with Popen(swipe_cmd, stdout=PIPE, stderr=STDOUT) as p, open(log_fn, 'a') as file:
             file.write('Starting subprocess with command:')
             file.write(str(swipe_cmd))
@@ -129,23 +207,17 @@ class SWIPE_align:
 
         # Reformat output so it can be read as XML:
         swipe_outfile_xml = self.__prep_SWIPE_XML(swipe_outfile)
-        # Read XML file:
-        query_hits, query_nohits = self.__parse_SWIPE_XML(swipe_outfile_xml, sp_tRNA_database)
-
-        # Dump unaligned sequences: 
-        with bz2.open(SWnohits_fnam, 'wt', encoding="utf-8") as fh_bz:
-            for record in SeqIO.parse(trimmed_fasta_fn, "fasta"):
-                if record.id in query_nohits:
-                    print('>{}'.format(record.id), file=fh_bz)
-                    print('{}'.format(record.seq), file=fh_bz)        
+        # Read XML file as a streamable generator:
+        json_stream = self.__parse_SWIPE_XML(swipe_outfile_xml, sp_tRNA_database)
         # Dump query_hits as JSON:
-        with bz2.open(SWres_fnam, 'wt', encoding="utf-8") as fh_bz:
-             json.dump(query_hits, fh_bz)
+        with bz2.open(SWres_fnam, 'wt', encoding="utf-8") as fh:
+            json.dump(json_stream, fh)
 
         # Remove tmp files:
-        os.remove(trimmed_fasta_fn)
+        if type(row) != str:
+            os.remove(trimmed_fasta_fn)
         os.remove(swipe_outfile)
-        os.remove(swipe_outfile_xml)        
+        os.remove(swipe_outfile_xml)
         return(1)
     
     def __make_SWIPE_cmd(self, sp_tRNA_database, trimmed_fn, sample_name_unique):
@@ -173,7 +245,11 @@ class SWIPE_align:
                 shutil.copyfileobj(from_file, to_file)
                 to_file.write(xml_last_line)
         return(swipe_outfile_xml)
-    
+
+    # Use decorator to define this as a streamable dict
+    # to avoid loading all into memory when writing to JSON.
+    # See: https://pypi.org/project/json-stream/
+    @streamable_dict
     def __parse_SWIPE_XML(self, swipe_outfile_xml, sp_tRNA_database):
         # Read the database IDs and use them to verify alignment results:
         db_id_set = set()
@@ -181,19 +257,19 @@ class SWIPE_align:
             db_id_set.add(record.id)
         
         # Parse XML:
-        query_hits = dict()
-        query_nohits = set()
         hit_dict = {tag: [] for tag in ['score', 'query', 'name', 'qpos', 'dpos', 'qseq', 'aseq', 'dseq']}
         pickup = True # When True, pick up hit data and store in tmp dict ("hit_dict")
         flush = False # When True, flush tmp dict into "query_hits"
         high_score = -999
         hit_dict_prev = None # For debugging
         SWxml = ET.iterparse(swipe_outfile_xml)
+
         for event, elem in SWxml:
             # When "result" tag is encountered it marks the end of the hits for a query.
             # Flush the data picked up:
             if elem.tag == 'result':
-                elem.clear() # clear for saving memory
+                # This would not save any memory:
+                # elem.clear() # clear for saving memory
                 flush = True
             # Pick up all tags defined in "hit_dict":
             elif pickup and elem.tag in hit_dict:
@@ -209,6 +285,7 @@ class SWIPE_align:
             # Flush out hit results into "query_hits".
             # Only if results are stored and alignment score is above minimum:
             if flush and len(hit_dict['score']) > 0 and high_score >= self.min_score_align:
+                query_hits = dict()
                 # Convert alignment score to integers:
                 hit_dict['score'] = [int(s) for s in hit_dict['score']]
                 # Find all the highest scoring hits, extract indices for selection:
@@ -225,7 +302,7 @@ class SWIPE_align:
                 assert(len(ls_query) == 1)
                 # Start to populate the dict entry for the query sequence:
                 query = ls_query[0]
-                query_hits[query] = {'score': high_score}
+                query_hits['score'] = high_score
                 # The "name" tag is the database result.
                 # First extract the right hand side of the string,
                 # corresponding to the fasta header,
@@ -236,19 +313,24 @@ class SWIPE_align:
                 # Extract sorting index for other data to be sorted:
                 name_idx = sorted(range(len(hit_dict['name'])), key=lambda k: hit_dict['name'][k])
                 name = '@'.join([hit_dict['name'][didx] for didx in name_idx])
-                query_hits[query]['name'] = name
+                query_hits['name'] = name
                 # Add qpos/dpos:
-                query_hits[query]['qpos'] = [hit_dict['qpos'][didx] for didx in name_idx]
-                query_hits[query]['dpos'] = [hit_dict['dpos'][didx] for didx in name_idx]
+                query_hits['qpos'] = [hit_dict['qpos'][didx] for didx in name_idx]
+                query_hits['dpos'] = [hit_dict['dpos'][didx] for didx in name_idx]
                 # Add alignment strings, but only for the first hit:
-                query_hits[query]['qseq'] = hit_dict['qseq'][name_idx[0]]
-                query_hits[query]['aseq'] = hit_dict['aseq'][name_idx[0]]
-                query_hits[query]['dseq'] = hit_dict['dseq'][name_idx[0]]
+                query_hits['qseq'] = hit_dict['qseq'][name_idx[0]]
+                query_hits['aseq'] = hit_dict['aseq'][name_idx[0]]
+                query_hits['dseq'] = hit_dict['dseq'][name_idx[0]]
+                query_hits['aligned'] = True
+
+                yield query, query_hits
             elif flush:
                 ls_query = list(set(hit_dict['query']))
                 if len(ls_query) > 0:
+                    query_hits = dict()
                     query = ls_query[0]
-                    query_nohits.add(query)
+                    query_hits['aligned'] = False
+                    yield query, query_hits
 
             # After flushing, reset the variables for new data pickup:
             if flush:
@@ -257,23 +339,75 @@ class SWIPE_align:
                 flush = False
                 pickup = True
                 high_score = -999
-        return(query_hits, query_nohits)
 
-    def __collect_stats(self):
-        # Collect stats about the alignment:
+    def __collect_stats(self,  index, row):
+        # Collect stats about the alignment #
+        if type(row) == str:
+            sample_name_unique = 'common-seqs'
+        else:
+            sample_name_unique = row['sample_name_unique']
+        # If common sequences were used get their observations:
+        if type(row) != str and not self.common_seqs_fnam is None:
+            common_obs_fn = '{}_common-seq-obs.json'.format(sample_name_unique)
+            with open(common_obs_fn, 'r') as fh_in:
+                common_obs = json.load(fh_in)
+
         if self.verbose:
-            print('\nCollecting alignment statistics, from sample:', end='')
-        stats = list()
-        for _, row in self.sample_df.iterrows():
-            if self.verbose:
-                print('  {}'.format(row['sample_name_unique']), end='')
-            SWres_fnam = '{}_SWalign.json.bz2'.format(row['sample_name_unique'])            
+            print('  {}'.format(sample_name_unique), end='')
+
+        # Collect information:
+        query_nohits = set()
+        N_mapped = 0
+        N_mult_mapped = 0
+        # Read query_hits from JSON:
+        SWres_fnam = '{}_SWalign.json.bz2'.format(sample_name_unique)
+        with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
+            # Parse JSON data as a stream,
+            # i.e. as a transient dict-like object
+            SWres = json_stream.load(SWres_fh)
+            for readID, align_dict in SWres.persistent().items():
+                if not align_dict['aligned']:
+                    query_nohits.add(readID)
+                else:
+                    N_mapped += 1
+                    if '@' in align_dict['name']:
+                        N_mult_mapped += 1
+
+        # Collect information from common sequences:
+        if type(row) != str and not self.common_seqs_fnam is None:
             # Read query_hits from JSON:
-            with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as fh_bz:
-                 query_hits = json.load(fh_bz)
+            SWres_fnam = '{}_SWalign.json.bz2'.format('common-seqs')
+            with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
+                # Parse JSON data as a stream,
+                # i.e. as a transient dict-like object
+                SWres = json_stream.load(SWres_fh)
+                for readID, align_dict in SWres.persistent().items():
+                    if align_dict['aligned']:
+                        readID_int = int(readID)
+                        N_mapped += common_obs[readID_int]
+                        if '@' in align_dict['name']:
+                            N_mult_mapped += common_obs[readID_int]
+
+        # Dump unaligned sequences:
+        SWnohits_fnam = '{}_SWalign-nohits.fasta.bz2'.format(sample_name_unique)
+        if type(row) == str:
+            with bz2.open(SWnohits_fnam, 'wt', encoding="utf-8") as fh_out:
+                with bz2.open(self.common_seqs_fnam, 'rt') as fh_in:
+                    for record in SeqIO.parse(fh_in, "fasta"):
+                        seq_id = record.id
+                        if seq_id in query_nohits:
+                            fh_out.write(">{}\n{}\n".format(record.id, str(record.seq)))
+            return(False)
+        else:
+            trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, sample_name_unique)
+            with bz2.open(SWnohits_fnam, 'wt', encoding="utf-8") as fh_out:
+                with bz2.open(trimmed_fn, 'rt') as fh_in:
+                    for title, seq, qual in FastqGeneralIterator(fh_in):
+                        seq_id = title.split()[0]
+                        if seq_id in query_nohits:
+                            fh_out.write(">{}\n{}\n".format(title, seq))
 
             # Calculate stats:
-            N_mapped = len(query_hits)
             if row['N_after_trim'] == 0:
                 map_p = 0
             else:
@@ -282,17 +416,20 @@ class SWIPE_align:
             if N_mapped == 0:
                 P_ma = 0
             else:
-                P_ma = sum(1 for h in query_hits.values() if '@' in h['name']) / N_mapped * 100
+                P_ma = N_mult_mapped / N_mapped * 100
             P_sa = 100 - P_ma
-            
-            stats.append([row['sample_name_unique'], N_mapped, P_sa, P_ma, map_p])
-        stats_df = pd.DataFrame(stats, columns=['sample_name_unique', 'N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'Mapping_percent'])
+
+            return([sample_name_unique, N_mapped, P_sa, P_ma, map_p])
+
+    def __write_stats(self, results):
+        # Remove the results entry from common seqeunces:
+        results = [res for res in results if not res is False]
+        stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'Mapping_percent'])
         # Merge stats with sample info dataframe:
         self.sample_df = self.sample_df.drop(columns=['N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'Mapping_percent'], errors='ignore')
         self.sample_df = self.sample_df.merge(stats_df, on=['sample_name_unique'])
         # Write stats:
         self.sample_df.to_excel('sample_stats.xlsx')
-
 
 
 def indices(lst, element):
@@ -304,5 +441,4 @@ def indices(lst, element):
         except ValueError:
             return result
         result.append(offset)
-
 
