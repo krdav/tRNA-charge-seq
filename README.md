@@ -9,7 +9,7 @@ To change common gzip compression files can be processed using the following:
 Dependencies (installed and in Env):
 * AdapterRemoval (https://adapterremoval.readthedocs.io)
 * Swipe (https://github.com/torognes/swipe)
-* makeblastdb
+* makeblastdb (required to make masked tRNA database, so not super important)
 
 Dependencies (Python packages):
 * pandas
