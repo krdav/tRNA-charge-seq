@@ -22,7 +22,28 @@ sandbox.ipynb
 /projects/**/*.fa
 /projects/**/*.fastq
 /projects/**/*.bz2
-/data/**/*.gz
-**/stats_collection
-**/data
+/projects/**/data
+
+
+# In example folder only push the raw_fastq folder
+# and some plotting folder to the repo:
+/example/data/AdapterRemoval*
+/example/data/BC_split*
+/example/data/raw_fastq_*
+/example/data/stats_collection*
+/example/data/SWalign*
+/example/data/transcript_mutations/tRNA_database*
+/example/data/UMI_trimmed*
+
+
+
+
+
+
+
+
+
+
+
+
 
