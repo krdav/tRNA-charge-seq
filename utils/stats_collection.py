@@ -56,7 +56,7 @@ class STATS_collection:
                     raise Exception('Only one species allowed in sample sheet when using common sequences.')
                 self.common_seqs_sp = list(sp_set)[0]
 
-                print('Using common sequences to prevent duplicated alignment.')
+                print('Using common sequences...')
                 assert(self.common_seqs_fnam[-4:] == '.bz2')
                 with bz2.open(self.common_seqs_fnam, "rt") as input_fh:
                     for ridx, record in enumerate(SeqIO.parse(input_fh, "fasta")):

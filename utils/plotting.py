@@ -15,8 +15,10 @@ from Bio import Align
 ### Plotting imports ###
 import seaborn as sns
 import matplotlib.pyplot as plt
-import matplotlib.backends.backend_pdf
+from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.colors as mcolors
+import matplotlib as mpl
+from matplotlib.patches import StepPatch
 import matplotlib.ticker as ticker
 import matplotlib.gridspec as gridspec
 import logomaker as lm
@@ -159,14 +161,14 @@ class TRNA_plot:
     
     
     
-    def plot_coverage(self, compartment='cyto', plot_type='needle', aa_norm=False, plot_name='cov_plot_cyto_needle', sample_list=None, verbose=True):
+    def plot_coverage(self, compartment='cyto', plot_type='needle', aa_norm=False, y_norm=False, plot_name='cov_plot_cyto_needle', sample_list=None, verbose=True):
         # Check input:
         if plot_type != 'behrens' and plot_type != 'needle':
             raise Exception('Unknown plot type specified: {}\nValid strings are either either "behrens" or "needle".'.format(plot_type))
         if sample_list is None:
             sample_list = [row['sample_name_unique'] for _, row in self.sample_df.iterrows()]
         sample_list = set(sample_list)
-            
+
         # Columns used for data aggregation:
         aa_cols = ['sample_name_unique', 'tRNA_annotation_len', 'align_5p_idx', 'align_3p_idx', 'AA_letter', 'count']
         # Require rows to be covered at the 3', have single codon annotation,
@@ -181,7 +183,7 @@ class TRNA_plot:
             raise Exception('Unknown compartment specified: {}\nValid strings are either either "mito" or "cyto"'.format(compartment))
 
         if verbose:
-            print('Now plotting sample:', end='')
+            print('\nNow plotting sample:', end='')
         # Use a 20 color colormap:
         cmap = mpl.colormaps['tab20']
         # Print each plot to the same PDF file:
@@ -219,14 +221,14 @@ class TRNA_plot:
                     cov_count = np.zeros((len(aa_order), max_len))
                     # Each row has an amino acid letter, align_5p_idx and a count.
                     # Insert these into the matrix:
-                    for _, row in cov_df.iterrows():
-                        aa_idx = aa_order[row['AA_letter']]
-                        _5p_idx = row['align_5p_idx'] - 1 # shift alignment index to 0 indexing
-                        anno_len = row['tRNA_annotation_len']
+                    for _, cov_row in cov_df.iterrows():
+                        aa_idx = aa_order[cov_row['AA_letter']]
+                        _5p_idx = cov_row['align_5p_idx'] - 1 # shift alignment index to 0 indexing
+                        anno_len = cov_row['tRNA_annotation_len']
                         _5p_idx_trans = len_map_len[anno_len][_5p_idx]
                         # Amino acids have multiple codons, each with multiple
                         # transcripts that can vary in length, thus add instead of assign:
-                        cov_count[aa_idx, _5p_idx_trans] += row['count']
+                        cov_count[aa_idx, _5p_idx_trans] += cov_row['count']
 
                     # Each count in the matrix repressents a number of reads
                     # and their length mapped to the tRNA. Now this is converted
@@ -244,6 +246,10 @@ class TRNA_plot:
                         cov_count = cov_count.T / cov_count[:, -1]
                         # Normalize so coverage at 3p is 1:
                         cov_count = cov_count.T * (1/cov_count.shape[1])
+                    # If "y_norm" is requested the y-axis is normalized to 1
+                    elif y_norm:
+                        # Normalize so coverage at 3p is summing to 100:
+                        cov_count = 100 * cov_count / sum(cov_count[:, -1])
 
                     # "cov_count" is summed on each row from left to right,
                     # but for plotting we also need to do summation on each
@@ -284,6 +290,8 @@ class TRNA_plot:
                         # Add title and axis labels:
                         if aa_norm:
                             axes[0].set_ylabel("Normalized coverage (amino acids equally weighed at 3')")
+                        elif y_norm:
+                            axes[0].set_ylabel("Normalized coverage (%)")
                         else:
                             axes[0].set_ylabel('Read count')
                         axes[1].set_xlabel("5' to 3' index (mapped to longest tRNA)");
@@ -369,7 +377,9 @@ class TRNA_plot:
                     seq_list = ['-'*(seq_len - len(s)) + s for s in self.all_stats.loc[mask, col_sele].values if len(s) <= seq_len]
             # Will throw an exception if all gaps:
             try:
-                counts_mat = lm.alignment_to_matrix(seq_list, self.all_stats.loc[mask, 'count'].values)
+                with warnings.catch_warnings(): # ignoring a warning about array assignment
+                    warnings.simplefilter(action='ignore', category=FutureWarning)
+                    counts_mat = lm.alignment_to_matrix(seq_list, self.all_stats.loc[mask, 'count'].values)
             except:
                 counts_mat = False
             plot_data.append([counts_mat, title])
@@ -397,7 +407,9 @@ class TRNA_plot:
             sample_stats = pd.read_csv(stats_fh, keep_default_na=False)
         try:
             UMI_mask = sample_stats['5p_UMI'] != ''
-            counts_mat = lm.alignment_to_matrix(sample_stats[UMI_mask]['5p_UMI'].values)
+            with warnings.catch_warnings(): # ignoring a warning about array assignment
+                warnings.simplefilter(action='ignore', category=FutureWarning)
+                counts_mat = lm.alignment_to_matrix(sample_stats[UMI_mask]['5p_UMI'].values)
             title = 'Sample: {}, logo from {} obs (excluding common seqs), {} % of obs vs exp'.format(row['sample_name_unique'], UMI_mask.sum(), round(row['percent_UMI_obs-vs-exp']))
         except:
             counts_mat = False
@@ -421,7 +433,7 @@ class TRNA_plot:
                 # characters, we don't want that:
                 with contextlib.redirect_stdout(None):
                     logo_plot = lm.Logo(counts_mat, color_scheme='classic');
-                logo_plot.ax.set_title(title)
+                logo_plot.ax.set_title(title, fontsize=15)
                 logo_plot.ax.set_xlabel("5' to 3'")
                 logo_plot.ax.set_ylabel("Count");
                 logo_plot.fig.tight_layout()
