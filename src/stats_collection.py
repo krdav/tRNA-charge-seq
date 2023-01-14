@@ -277,12 +277,12 @@ class STATS_collection:
         with open(stats_agg_fnam, 'w') as fh_out:
             # Grap header:
             with open(csv_paths[0], 'r') as fh_in:
-                print(fh_in.readline(), file=fh_out)            
+                print(fh_in.readline(), file=fh_out, end='')
             for path in csv_paths:
                 with open(path, 'r') as fh_in:
                     next(fh_in) # burn the header
                     for line in fh_in:
-                        print(line, file=fh_out)
+                        print(line, file=fh_out, end='')
 
         # Apply some filtering and aggregate again
         # to get a smaller output dataframe:

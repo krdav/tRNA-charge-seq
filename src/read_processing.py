@@ -512,14 +512,14 @@ class UMI_trim:
     is lower than the expected number of unique UMI.
     How much lower, is a usefull metric reported in the stats.
     '''
-    def __init__(self, dir_dict, sample_df):
+    def __init__(self, dir_dict, sample_df, UMI_end={'T', 'C'}):
         # Calculate the number of possible UMIs,
         # 9x random nt. (A/G/T/C) and one purine (A/G)
         self.n_bins = 4**9 * 2
         self.UMI_len = 10
         # The 5' purine on the oligo end
         # turns into a pyrimidine on the read:
-        self.UMI_end = {'T', 'C'}
+        self.UMI_end = UMI_end
         
         # Input:
         self.sample_df = sample_df
