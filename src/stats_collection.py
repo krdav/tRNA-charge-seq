@@ -1,14 +1,9 @@
-import sys, os, shutil, bz2, random, resource, warnings, subprocess, copy, re, glob, json, gc
-from subprocess import Popen, PIPE, STDOUT
+import sys, os, shutil, bz2, warnings, json, gc
 import json_stream
-import xml.etree.ElementTree as ET
-from pathlib import Path
-from Bio import Seq, SeqIO, SearchIO, SeqRecord, bgzf
-from Bio.SeqIO.QualityIO import FastqGeneralIterator
+from Bio import SeqIO
 import pandas as pd
 import numpy as np
 from mpire import WorkerPool
-import jellyfish
 
 
 

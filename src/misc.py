@@ -1,13 +1,9 @@
-import sys, os, shutil, bz2, random, resource, warnings, subprocess, copy, re, glob, json
-from subprocess import Popen, PIPE, STDOUT
-import xml.etree.ElementTree as ET
-from pathlib import Path
-from Bio import Seq, SeqIO, SearchIO, SeqRecord, bgzf
+import sys, os, shutil, bz2, random, copy
+from Bio import SeqIO
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
 import pandas as pd
 import numpy as np
-from mpire import WorkerPool
-import jellyfish
+
 
 
 def sample_df_to_dict(sample_df):
