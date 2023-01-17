@@ -335,7 +335,7 @@ class Kmer_analysis:
                 except KeyError:
                     k_dict_all[kmer] = obs
 
-        kmer_df = self.__write_stats(k_dict, 'ALL', return_df=True)
+        kmer_df = self.__write_stats(k_dict_all, 'ALL', return_df=True)
         return(kmer_df)
 
     def __write_stats(self, k_dict, outp_ext, return_df=False):
@@ -445,7 +445,7 @@ class BC_analysis:
                         k_dict_all[bc][dist] = obs
 
         # Write stats for all files:
-        self.bc_df = self.__write_stats(k_dict, 'ALL', return_df=True)
+        self.bc_df = self.__write_stats(k_dict_all, 'ALL', return_df=True)
         # Group by barcode name and make total count:
         mask = self.bc_df['Distance'] <= group_dist
         self.sum_df = self.bc_df.loc[mask, ['Name', 'Count']].groupby('Name').sum().sort_values(by=['Count'], ascending=False).reset_index()

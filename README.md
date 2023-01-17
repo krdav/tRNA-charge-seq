@@ -7,7 +7,8 @@ To change common gzip compression files can be processed using the following:
 
 
 Dependencies (installed and in Env):
-* AdapterRemoval (https://adapterremoval.readthedocs.io)
+* AdapterRemoval v2 (https://adapterremoval.readthedocs.io)
+*  Have not been tested with adapter removal v3
 * Swipe (https://github.com/torognes/swipe)
 * makeblastdb (required to make masked tRNA database, so not super important)
 

@@ -108,8 +108,11 @@ class STATS_collection:
         # Read stats from stats CSV file:
         with bz2.open(stats_fnam, 'rt') as stats_fh:
             # Use "keep_default_na=False" to read an empty string
-            # as an empty string and not as NaN:
-            stat_df = pd.read_csv(stats_fh, keep_default_na=False)
+            # as an empty string and not as NaN.
+            # Use low_memory=False to avoid warnings about mixed dtypes
+            # in column one because of readID can be both
+            # a fastq header and a number (for common sequences).
+            stat_df = pd.read_csv(stats_fh, keep_default_na=False, low_memory=False)
 
         # Aggregate dataframe and write as CSV file:
         # stat_df['count'] = np.zeros(len(stat_df))  # dummy for groupby count
@@ -265,6 +268,11 @@ class STATS_collection:
                             _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc, count]
                 csv_line = ','.join(map(str, line_lst))
                 print(csv_line, file=stats_fh)
+
+    def get_ALL_stats(self):
+        stats_agg_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
+        stats_df = pd.read_csv(stats_agg_fnam, keep_default_na=False)
+        return(stats_df)
 
     def __concat_stats(self, csv_paths):
         # Concatenate all the aggregated stats csv files:
