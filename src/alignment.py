@@ -81,11 +81,21 @@ class SWIPE_align:
                 print('Using existing folder because overwrite set to false: {}'.format(self.align_dir_abs))
         return(self.align_dir_abs)
 
-    def run_parallel(self, n_jobs=4, overwrite=True, verbose=True):
+    def run_parallel(self, n_jobs=4, overwrite=True, verbose=True, load_previous=False):
         self.SWIPE_overwrite = overwrite
         self.verbose = verbose
+        if load_previous:
+            try:
+                self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.align_dir_abs), index_col=0)
+                print('Loaded results from previous run... Not running alignment.')
+                return(self.sample_df)
+            except Exception as err:
+                print('Attempted to read previous stats from sample_stats, but failed...')
+                raise err
+
         if self.verbose:
             print('Running Swipe on:', end='')
+
         os.chdir(self.align_dir_abs)
         try:
             # Run SWIPE in parallel:
@@ -157,10 +167,11 @@ class SWIPE_align:
             print('Swipe cmd: {}'.format(' '.join(swipe_cmd)))
             return(1)
 
-        # Skip, if results file has already been made and no overwrite:
+        # Skip, if results file has already been made and no overwrite.
+        # Checking that "swipe_outfile" has been deleted makes sure
+        # that "SWres_fnam" is finished writing.
         SWres_fnam = '{}_SWalign.json.bz2'.format(sample_name_unique)
-        SWnohits_fnam = '{}_SWalign-nohits.fasta.bz2'.format(sample_name_unique)
-        if not self.SWIPE_overwrite and os.path.isfile(SWres_fnam) and os.path.isfile(SWnohits_fnam):
+        if not self.SWIPE_overwrite and os.path.isfile(SWres_fnam) and not os.path.isfile(swipe_outfile):
             return(1)
 
         # Prepare sequences for SWIPE:

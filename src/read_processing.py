@@ -168,6 +168,7 @@ class BC_split:
             try:
                 self.inp_file_df = pd.read_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
                 self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
+                print('Loaded results from previous run... Not running barcode split.')
             except Exception as err:
                 print('Attempted to read previous stats from index-pair_stats and sample_stats, but failed...')
                 raise err
@@ -558,6 +559,7 @@ class UMI_trim:
         else:
             try:
                 self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs), index_col=0)
+                print('Loaded results from previous run... Not running UMI trimming.')
             except Exception as err:
                 print('Attempted to read previous stats from sample_stats, but failed...')
                 raise err

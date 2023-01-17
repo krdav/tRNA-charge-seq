@@ -82,6 +82,7 @@ class STATS_collection:
         self.__concat_stats(results)
         return(self.concat_df)
 
+    '''
     def run_serial(self, verbose=True):
         self.verbose = verbose
         if self.verbose:
@@ -89,6 +90,7 @@ class STATS_collection:
         results = [self.__collect_stats(index, row) for index, row in self.sample_df.iterrows()]
         self.__concat_stats(results)
         return(self.concat_df)
+    '''
     
     def __collect_stats(self, index, row):
         if self.verbose:
