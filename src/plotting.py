@@ -34,9 +34,8 @@ class TRNA_plot:
     from the tRNAseq data such as charge per codon,
     read per million (RPM) etc.
     '''
-    def __init__(self, dir_dict, sample_df, pull_default=False):
+    def __init__(self, dir_dict, sample_df=None, pull_default=False):
         # Input:
-        self.sample_df = sample_df
         self.dir_dict = dir_dict
         self.charge_df = None
         self.charge_filt = dict()
@@ -48,9 +47,12 @@ class TRNA_plot:
         if pull_default:
             sample_df_path = '{}/{}'.format(self.align_dir_abs, 'sample_stats.xlsx')
             if os.path.isfile(sample_df_path):
-                self.sample_df = pd.read_excel(sample_df_path, index_col=0)
+                sample_df = pd.read_excel(sample_df_path, index_col=0)
             else:
                 raise Exception('Default "sample_df" could not be found: {}'.format(sample_df_path))
+        elif sample_df is None:
+            raise Exception('A "sample_df" must be specified or "pulled from default".')
+        self.sample_df = sample_df
 
         # Load aggregated CSV data:
         stats_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)

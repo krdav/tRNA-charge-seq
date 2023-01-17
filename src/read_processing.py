@@ -425,6 +425,7 @@ class BC_analysis:
     def search_unmapped(self, search_size=13, group_dist=1, load_previous=False):
         if load_previous:
             self.sum_df = pd.read_excel('{}/{}{}_unmapped-BC-analysis.xlsx'.format(self.BCanalysis_dir_abs, 'ALL-groupby-dist-', group_dist), index_col=0)
+            print('Loaded results from previous run... Not running barcode analysis.')
             return(self.sum_df)
 
         # Find closest barcode and store in dictionary:
@@ -549,8 +550,8 @@ class UMI_trim:
                 print('Using existing folder because overwrite set to false: {}'.format(self.UMI_dir_abs))
         return(self.UMI_dir_abs)
 
-    def run_parallel(self, n_jobs=4, load_previous=True):
-        if not load_previous is False:
+    def run_parallel(self, n_jobs=4, load_previous=False):
+        if load_previous is False:
             # Run parallel:
             data = list(self.sample_df.iterrows())
             with WorkerPool(n_jobs=n_jobs) as pool:

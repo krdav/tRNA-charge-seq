@@ -68,10 +68,16 @@ class STATS_collection:
                 shutil.rmtree(self.stats_dir_abs)
                 os.mkdir(self.stats_dir_abs)
             else:
-                raise Exception('Folder exists and overwrite set to false: {}'.format(self.stats_dir_abs))
+                print('Using existing folder because overwrite set to false: {}'.format(self.stats_dir_abs))
         return(self.stats_dir_abs)
 
-    def run_parallel(self, n_jobs=4, verbose=True):
+    def run_parallel(self, n_jobs=4, verbose=True, load_previous=False):
+        if load_previous:
+            stats_agg2_fnam = '{}/ALL_stats_aggregate_filtered.csv'.format(self.stats_dir_abs)
+            self.concat_df = pd.read_csv(stats_agg2_fnam, keep_default_na=False, low_memory=False)
+            print('Loaded results from previous run... Not running stats collection.')
+            return(self.concat_df)
+
         self.verbose = verbose
         if self.verbose:
             print('Collecting stats from:', end='')
@@ -273,7 +279,7 @@ class STATS_collection:
 
     def get_ALL_stats(self):
         stats_agg_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
-        stats_df = pd.read_csv(stats_agg_fnam, keep_default_na=False)
+        stats_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, low_memory=False)
         return(stats_df)
 
     def __concat_stats(self, csv_paths):
@@ -293,8 +299,7 @@ class STATS_collection:
         # to get a smaller output dataframe:
         stats_agg2_fnam = '{}/ALL_stats_aggregate_filtered.csv'.format(self.stats_dir_abs)
         # Read and store as dataframe:
-        with open(stats_agg_fnam, 'r') as stats_fh:
-            concat_df = pd.read_csv(stats_fh, keep_default_na=False)
+        concat_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, low_memory=False)
 
         # For charge to be determined the 3' must be covered
         # and have no 3' non-template bases:
@@ -302,11 +307,5 @@ class STATS_collection:
         concat_df = concat_df.loc[row_mask, self.stats_agg_cols2]
         self.concat_df = concat_df.groupby(self.stats_agg_cols2[:-1], as_index=False).agg({"count": "sum"})
         self.concat_df.to_csv(stats_agg2_fnam, header=True, index=False)
-
-
-
-
-
-
 
 
