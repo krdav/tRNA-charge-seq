@@ -1,6 +1,6 @@
 import sys, os, shutil, bz2, json
 from subprocess import Popen, PIPE, STDOUT
-import xml.etree.ElementTree as ET
+import xml.etree.cElementTree as ET
 from Bio import SeqIO
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
 import pandas as pd
@@ -332,6 +332,7 @@ class SWIPE_align:
                 flush = False
                 pickup = True
                 high_score = -999
+                elem.clear() # this clears the element from memory
 
     def __collect_stats(self,  index, row):
         # Collect stats about the alignment #
