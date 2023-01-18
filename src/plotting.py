@@ -34,7 +34,7 @@ class TRNA_plot:
     from the tRNAseq data such as charge per codon,
     read per million (RPM) etc.
     '''
-    def __init__(self, dir_dict, sample_df=None, pull_default=False):
+    def __init__(self, dir_dict, sample_df=None, stats_fnam=None, pull_default=False):
         # Input:
         self.dir_dict = dir_dict
         self.charge_df = None
@@ -55,7 +55,8 @@ class TRNA_plot:
         self.sample_df = sample_df
 
         # Load aggregated CSV data:
-        stats_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
+        if stats_fnam is None:
+            stats_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
         self.all_stats = pd.read_csv(stats_fnam, keep_default_na=False)
         # Get rid of 1/2 in mito Leu amino acid name:
         self.all_stats['amino_acid'] = [AA[:-1] if AA[-1]=='1' or AA[-1]=='2' else AA for AA in self.all_stats['amino_acid'].values]
@@ -201,7 +202,7 @@ class TRNA_plot:
     def plot_Ecoli_ctr(self, plot_name='Ecoli_control', sample_list=None):
         pass
 
-    def plot_abundance(self, plot_type='aa', charge_plot=False, plot_name='abundance_plot_aa', min_obs=100, sample_list=None, verbose=True, sample_list_exl=None, bc_list_exl=None):
+    def plot_abundance(self, plot_type='aa', group=False, charge_plot=False, plot_name='abundance_plot_aa', min_obs=100, sample_list=None, verbose=True, sample_list_exl=None, bc_list_exl=None):
         if self.charge_df is None:
             self.get_charge_df()
 
@@ -219,12 +220,11 @@ class TRNA_plot:
         else:
             y_axis = 'RPM'
 
-
         if sample_list is None:
             sample_list = list(self.sample_df['sample_name'].drop_duplicates())
 
         if verbose:
-            print('\nNow plotting sample:', end='')
+            print('\nNow plotting sample/group:', end='')
 
         # Use a 40 color colormap:
         cmap_b = mpl.colormaps['tab20']
@@ -235,16 +235,28 @@ class TRNA_plot:
         cmap_b._i_over = 40
         cmap_b._i_under = 0
 
+        snam_df = self.sample_df.loc[:, ['sample_name', 'plot_group', 'hue_name', 'hue_value', 'hue_order']].drop_duplicates()
+        charge_df_type = charge_df_type.merge(snam_df, on='sample_name')
+        if group:
+            plot_iter = snam_df['plot_group'].drop_duplicates()
+        else:
+            plot_iter = snam_df['sample_name'].drop_duplicates()
+
         # Print each plot to the same PDF file:
         charge_fnam = '{}/{}.pdf'.format(self.plotting_dir_abs, plot_name)
         with PdfPages(charge_fnam) as pp:
             # Loop through and generate plots for each sample:
-            for sample_name in self.sample_df['sample_name'].drop_duplicates():
-                if not sample_name in sample_list:
+            for sg_name in plot_iter:
+                if group is False and not sg_name in sample_list:
                     continue
-                print('  {}'.format(sample_name), end='')
+                print('  {}'.format(sg_name), end='')
+
                 # Sample rows selected:
-                sample_mask = (charge_df_type['sample_name'] == sample_name) & (charge_df_type['count'] >= min_obs)
+                if group:
+                    sample_mask = (charge_df_type['plot_group'] == sg_name) & (charge_df_type['count'] >= min_obs)
+                else:
+                    sample_mask = (charge_df_type['sample_name'] == sg_name) & (charge_df_type['count'] >= min_obs)
+
                 # Exclude unique samples or barcodes:
                 if not sample_list_exl is None:
                     for unam in sample_list_exl:
@@ -254,71 +266,75 @@ class TRNA_plot:
                         sample_mask &= (charge_df_type['barcode'] != bc)
 
                 charge_sample = charge_df_type[sample_mask].copy()
-
                 # Plot separate for mito/cyto:
                 mask_cyto = (~charge_sample['Ecoli_ctr']) & (~charge_sample['mito_codon'])
                 mask_mito = (~charge_sample['Ecoli_ctr']) & (charge_sample['mito_codon'])
 
+                # Different settings for different plot types:
+                Ngrp = len(set(charge_sample['sample_name']))
+                hue_order = [t[0] for t in sorted(dict(zip(charge_sample['hue_value'].values, charge_sample['hue_order'].values)).items(), key=lambda x: x[1])]
                 if plot_type == 'aa':
-                    fig = plt.figure(figsize=(9, 9))
+                    x_axis = 'amino_acid'
+                    x_list_cyto = sorted(set(charge_sample['amino_acid'][mask_cyto].values), key=str.casefold)
+                    x_list_mito = sorted(set(charge_sample['amino_acid'][mask_mito].values), key=str.casefold)
+                    AA_set = set(x_list_cyto+x_list_mito)
+                    AAi = {aa:i for i, aa in enumerate(sorted(AA_set))}
+                    colors_cyto = {c: cmap_b(AAi[c]) for c in x_list_cyto}
+                    colors_mito = {c: cmap_b(AAi[c]) for c in x_list_mito}
+                    fig = plt.figure(figsize=(8*Ngrp, 9))
                     gs = fig.add_gridspec(2, 4)
                     ax1 = fig.add_subplot(gs[0, :])
                     ax2 = fig.add_subplot(gs[1, :])
-
-                    aa_list_cyto = sorted(set(charge_sample['amino_acid'][mask_cyto].values), key=str.casefold)
-                    aa_list_mito = sorted(set(charge_sample['amino_acid'][mask_mito].values), key=str.casefold)
-
-                    AA_set = set(aa_list_cyto+aa_list_mito)
-                    AAi = {aa:i for i, aa in enumerate(sorted(AA_set))}
-                    colors_cyto = {c: cmap_b(AAi[c]) for c in aa_list_cyto}
-                    colors_mito = {c: cmap_b(AAi[c]) for c in aa_list_mito}
-
-                    # Cyto tRNAs
-                    g1 = sns.barplot(ax=ax1, x='amino_acid', y=y_axis, order=aa_list_cyto, data=charge_sample[mask_cyto], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_cyto)
-                    # Mito tRNAs
-                    g2 = sns.barplot(ax=ax2, x='amino_acid', y=y_axis, order=aa_list_mito, data=charge_sample[mask_mito], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_mito)
-
                 elif plot_type == 'codon':
-                    fig = plt.figure(figsize=(20, 9))
+                    x_axis = 'AA_codon'
+                    x_list_cyto = sorted(set(charge_sample['AA_codon'][mask_cyto].values), key=str.casefold)
+                    x_list_mito = sorted(set(charge_sample['AA_codon'][mask_mito].values), key=str.casefold)
+                    AA_set = {c.split('-')[0] for c in x_list_cyto+x_list_mito}
+                    AAi = {aa:i for i, aa in enumerate(sorted(AA_set))}
+                    colors_cyto = {c: cmap_b(AAi[c.split('-')[0]]) for c in x_list_cyto}
+                    colors_mito = {c: cmap_b(AAi[c.split('-')[0]]) for c in x_list_mito}
+                    fig = plt.figure(figsize=(16*Ngrp, 9))
                     gs = fig.add_gridspec(2, 4)
                     ax1 = fig.add_subplot(gs[0, :])
                     ax2 = fig.add_subplot(gs[1, 1:3])
-
-                    codon_list_cyto = sorted(set(charge_sample['AA_codon'][mask_cyto].values), key=str.casefold)
-                    codon_list_mito = sorted(set(charge_sample['AA_codon'][mask_mito].values), key=str.casefold)
-
-                    AA_set = {c.split('-')[0] for c in codon_list_cyto+codon_list_mito}
-                    AAi = {aa:i for i, aa in enumerate(sorted(AA_set))}
-                    colors_cyto = {c: cmap_b(AAi[c.split('-')[0]]) for c in codon_list_cyto}
-                    colors_mito = {c: cmap_b(AAi[c.split('-')[0]]) for c in codon_list_mito}
-
-                    # Cyto tRNAs
-                    g1 = sns.barplot(ax=ax1, x='AA_codon', y=y_axis, order=codon_list_cyto, data=charge_sample[mask_cyto], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_cyto)
-                    # Mito tRNAs
-                    g2 = sns.barplot(ax=ax2, x='AA_codon', y=y_axis, order=codon_list_mito, data=charge_sample[mask_mito], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_mito)
-
                 elif plot_type == 'transcript':
-                    fig = plt.figure(figsize=(45, 15))
+                    x_axis = 'tRNA_anno_short'
+                    mask_cyto = (~charge_sample['Ecoli_ctr']) & (~charge_sample['mito_codon'])
+                    mask_mito = (~charge_sample['Ecoli_ctr']) & (charge_sample['mito_codon'])
+                    x_list_cyto = sorted(set(charge_sample['tRNA_anno_short'][mask_cyto].values), key=str.casefold)
+                    x_list_mito = sorted(set(charge_sample['tRNA_anno_short'][mask_mito].values), key=str.casefold)
+                    colors_cyto = None
+                    colors_mito = None
+                    fig = plt.figure(figsize=(45*Ngrp, 15))
                     gs = fig.add_gridspec(2, 10)
                     ax1 = fig.add_subplot(gs[0, :])
                     ax2 = fig.add_subplot(gs[1, 4:6])
 
-                    mask_cyto = (~charge_sample['Ecoli_ctr']) & (~charge_sample['mito_codon'])
-                    mask_mito = (~charge_sample['Ecoli_ctr']) & (charge_sample['mito_codon'])
-                    tr_list_cyto = sorted(set(charge_sample['tRNA_anno_short'][mask_cyto].values), key=str.casefold)
-                    tr_list_mito = sorted(set(charge_sample['tRNA_anno_short'][mask_mito].values), key=str.casefold)
-
+                # Plot either as grouped or single bars:
+                if group:
                     # Cyto tRNAs
-                    g1 = sns.barplot(ax=ax1, x='tRNA_anno_short', y=y_axis, order=tr_list_cyto, data=charge_sample[mask_cyto], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85)
+                    g1 = sns.barplot(ax=ax1, x=x_axis, y=y_axis, hue='hue_value', hue_order=hue_order, order=x_list_cyto, data=charge_sample[mask_cyto], capsize=.025, errwidth=2, edgecolor='black', linewidth=2, alpha=0.8)
                     # Mito tRNAs
-                    g2 = sns.barplot(ax=ax2, x='tRNA_anno_short', y=y_axis, order=tr_list_mito, data=charge_sample[mask_mito], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85)
+                    g2 = sns.barplot(ax=ax2, x=x_axis, y=y_axis, hue='hue_value', hue_order=hue_order, order=x_list_mito, data=charge_sample[mask_mito], capsize=.025, errwidth=2, edgecolor='black', linewidth=2, alpha=0.8)
+                    # Legend:
+                    g2.legend_.remove()
+                    old_legend = g1.legend_
+                    handles = old_legend.legendHandles
+                    labels = hue_order
+                    title = charge_sample['hue_name'].values[0]
+                    g1.legend(handles, labels, title=title, bbox_to_anchor=(1.01,1), borderaxespad=0)
+                else:
+                    # Cyto tRNAs
+                    g1 = sns.barplot(ax=ax1, x=x_axis, y=y_axis, order=x_list_cyto, data=charge_sample[mask_cyto], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_cyto)
+                    # Mito tRNAs
+                    g2 = sns.barplot(ax=ax2, x=x_axis, y=y_axis, order=x_list_mito, data=charge_sample[mask_mito], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_mito)
 
                 # Set axis/title text:
-                g1.set_title('Cytoplasmic tRNA for sample {}'.format(sample_name))
+                g1.set_title('Cytoplasmic tRNA for sample {}'.format(sg_name))
                 g1.set_xticklabels(g1.get_xticklabels(), rotation=90)
                 g1.grid(True, axis='y')
                 g1.set_xlabel('');
-                g2.set_title('Mitochondrial tRNA for sample {}'.format(sample_name))
+                g2.set_title('Mitochondrial tRNA for sample {}'.format(sg_name))
                 g2.set_xticklabels(g2.get_xticklabels(), rotation=90)
                 g2.grid(True, axis='y')
                 g2.set_xlabel('');
