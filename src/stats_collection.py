@@ -293,6 +293,6 @@ class STATS_collection:
                         print(line, file=fh_out, end='')
 
         # Read and store as dataframe:
-        concat_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, low_memory=False)
+        self.concat_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, low_memory=False)
 
 
