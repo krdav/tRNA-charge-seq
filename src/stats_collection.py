@@ -12,10 +12,9 @@ class STATS_collection:
     This class is used to collect statistics from the
     alignment results.
     '''
-    def __init__(self, dir_dict, tRNA_data, sample_df, common_seqs=None, ignore_common_count=False):
+    def __init__(self, dir_dict, tRNA_data, sample_df, common_seqs=None, ignore_common_count=False, check_exists=True):
         self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'align_score', 'unique_annotation', 'tRNA_annotation_len', 'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', '5p_cover', '3p_cover', '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', 'count']
-        self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'align_score', 'unique_annotation', 'tRNA_annotation_len', 'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', '5p_cover', '3p_cover', '5p_non-temp', '3p_non-temp', 'codon', 'anticodon', 'amino_acid', 'count']
-        self.stats_agg_cols2 = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', 'count']
+        self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', '5p_cover', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', 'count']
 
         # Input:
         self.tRNA_data, self.sample_df = tRNA_data, sample_df
@@ -26,37 +25,38 @@ class STATS_collection:
         # Check files exists before starting:
         self.align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
         self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
-        for _, row in self.sample_df.iterrows():
-            SWres_fnam = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
-            assert(os.path.exists(SWres_fnam))
-            trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
-            assert(os.path.exists(trimmed_fn))
-            common_obs_fn = '{}/{}_common-seq-obs.json'.format(self.align_dir_abs, row['sample_name_unique'])
-            if not self.common_seqs_fnam is None:
-                assert(os.path.exists(common_obs_fn))
-            elif self.common_seqs_fnam is None and ignore_common_count is False and os.path.exists(common_obs_fn):
-                raise Exception('Found common sequence counts for {}\n'
-                                'See: {}\n'
-                                'But common sequences are not specified. Either specify common sequences '
-                                'or explicitly set ignore_common_count=True'.format(row['sample_name_unique'], common_obs_fn))
+        if check_exists:
+            for _, row in self.sample_df.iterrows():
+                SWres_fnam = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
+                assert(os.path.exists(SWres_fnam))
+                trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
+                assert(os.path.exists(trimmed_fn))
+                common_obs_fn = '{}/{}_common-seq-obs.json'.format(self.align_dir_abs, row['sample_name_unique'])
+                if not self.common_seqs_fnam is None:
+                    assert(os.path.exists(common_obs_fn))
+                elif self.common_seqs_fnam is None and ignore_common_count is False and os.path.exists(common_obs_fn):
+                    raise Exception('Found common sequence counts for {}\n'
+                                    'See: {}\n'
+                                    'But common sequences are not specified. Either specify common sequences '
+                                    'or explicitly set ignore_common_count=True'.format(row['sample_name_unique'], common_obs_fn))
 
-        # Make name to sequence dictionary for common sequences:
-        if not self.common_seqs_fnam is None:
-                # We can only allow one species if using common sequences.
-                # Multiple species would require running the alignment on common sequences
-                # several times, defeating the purpose, but also making the code much
-                # more complicated.
-                sp_set = set(self.sample_df['species'].values)
-                if len(sp_set) > 1:
-                    raise Exception('Only one species allowed in sample sheet when using common sequences.')
-                self.common_seqs_sp = list(sp_set)[0]
+    def __load_commen_seqs(self):
+        # Make name to sequence dictionary for common sequences.
+        # We can only allow one species if using common sequences.
+        # Multiple species would require running the alignment on common sequences
+        # several times, defeating the purpose, but also making the code much
+        # more complicated.
+        sp_set = set(self.sample_df['species'].values)
+        if len(sp_set) > 1:
+            raise Exception('Only one species allowed in sample sheet when using common sequences.')
+        self.common_seqs_sp = list(sp_set)[0]
 
-                print('Using common sequences...')
-                assert(self.common_seqs_fnam[-4:] == '.bz2')
-                with bz2.open(self.common_seqs_fnam, "rt") as input_fh:
-                    for ridx, record in enumerate(SeqIO.parse(input_fh, "fasta")):
-                        assert(ridx == int(record.id))
-                        self.common_seqs_info[record.id] = str(record.seq)
+        print('Using common sequences...')
+        assert(self.common_seqs_fnam[-4:] == '.bz2')
+        with bz2.open(self.common_seqs_fnam, "rt") as input_fh:
+            for ridx, record in enumerate(SeqIO.parse(input_fh, "fasta")):
+                assert(ridx == int(record.id))
+                self.common_seqs_info[record.id] = str(record.seq)
 
     def make_dir(self, overwrite=True):
         # Create folder for files:
@@ -73,10 +73,12 @@ class STATS_collection:
 
     def run_parallel(self, n_jobs=4, verbose=True, load_previous=False):
         if load_previous:
-            stats_agg2_fnam = '{}/ALL_stats_aggregate_filtered.csv'.format(self.stats_dir_abs)
-            self.concat_df = pd.read_csv(stats_agg2_fnam, keep_default_na=False, low_memory=False)
+            stats_agg_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
+            self.concat_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, low_memory=False)
             print('Loaded results from previous run... Not running stats collection.')
             return(self.concat_df)
+        elif not self.common_seqs_fnam is None:
+            self.__load_commen_seqs()
 
         self.verbose = verbose
         if self.verbose:
@@ -123,8 +125,8 @@ class STATS_collection:
             stat_df = pd.read_csv(stats_fh, keep_default_na=False, low_memory=False)
 
         # Aggregate dataframe and write as CSV file:
-        # stat_df['count'] = np.zeros(len(stat_df))  # dummy for groupby count
-        agg_df = stat_df.groupby(self.stats_agg_cols[:-1], as_index=False).agg({"count": "sum"})
+        row_mask = (stat_df['3p_cover']) & (stat_df['3p_non-temp'] == '')
+        agg_df = stat_df[row_mask].groupby(self.stats_agg_cols[:-1], as_index=False).agg({"count": "sum"})
         agg_df.to_csv(stats_agg_fnam, header=True, index=False)
 
         return(stats_agg_fnam)
@@ -277,11 +279,6 @@ class STATS_collection:
                 csv_line = ','.join(map(str, line_lst))
                 print(csv_line, file=stats_fh)
 
-    def get_ALL_stats(self):
-        stats_agg_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
-        stats_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, low_memory=False)
-        return(stats_df)
-
     def __concat_stats(self, csv_paths):
         # Concatenate all the aggregated stats csv files:
         stats_agg_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
@@ -295,17 +292,7 @@ class STATS_collection:
                     for line in fh_in:
                         print(line, file=fh_out, end='')
 
-        # Apply some filtering and aggregate again
-        # to get a smaller output dataframe:
-        stats_agg2_fnam = '{}/ALL_stats_aggregate_filtered.csv'.format(self.stats_dir_abs)
         # Read and store as dataframe:
         concat_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, low_memory=False)
-
-        # For charge to be determined the 3' must be covered
-        # and have no 3' non-template bases:
-        row_mask = (concat_df['3p_cover']) & (concat_df['3p_non-temp'] == '')
-        concat_df = concat_df.loc[row_mask, self.stats_agg_cols2]
-        self.concat_df = concat_df.groupby(self.stats_agg_cols2[:-1], as_index=False).agg({"count": "sum"})
-        self.concat_df.to_csv(stats_agg2_fnam, header=True, index=False)
 
 
