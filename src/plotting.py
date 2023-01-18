@@ -34,9 +34,8 @@ class TRNA_plot:
     from the tRNAseq data such as charge per codon,
     read per million (RPM) etc.
     '''
-    def __init__(self, dir_dict, sample_df, pull_default=False):
+    def __init__(self, dir_dict, sample_df=None, stats_fnam=None, pull_default=False):
         # Input:
-        self.sample_df = sample_df
         self.dir_dict = dir_dict
         self.charge_df = None
         self.charge_filt = dict()
@@ -48,12 +47,16 @@ class TRNA_plot:
         if pull_default:
             sample_df_path = '{}/{}'.format(self.align_dir_abs, 'sample_stats.xlsx')
             if os.path.isfile(sample_df_path):
-                self.sample_df = pd.read_excel(sample_df_path, index_col=0)
+                sample_df = pd.read_excel(sample_df_path, index_col=0)
             else:
                 raise Exception('Default "sample_df" could not be found: {}'.format(sample_df_path))
+        elif sample_df is None:
+            raise Exception('A "sample_df" must be specified or "pulled from default".')
+        self.sample_df = sample_df
 
         # Load aggregated CSV data:
-        stats_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
+        if stats_fnam is None:
+            stats_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
         self.all_stats = pd.read_csv(stats_fnam, keep_default_na=False)
         # Get rid of 1/2 in mito Leu amino acid name:
         self.all_stats['amino_acid'] = [AA[:-1] if AA[-1]=='1' or AA[-1]=='2' else AA for AA in self.all_stats['amino_acid'].values]
@@ -122,7 +125,7 @@ class TRNA_plot:
         stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'tRNA_anno_short', 'tRNA_annotation_len', 'unique_annotation', 'codon', 'anticodon', 'AA_codon', 'amino_acid', 'single_codon', 'single_aa', 'mito_codon', 'Ecoli_ctr', 'AA_letter', 'align_3p_nt', 'count']
         row_mask = (self.all_stats['3p_cover']) & (self.all_stats['3p_non-temp'] == '') & ((self.all_stats['align_3p_nt'] == 'A') | (self.all_stats['align_3p_nt'] == 'C'))
         all_stats_filt = self.all_stats.loc[row_mask, stats_agg_cols]
-        all_stats_filt = all_stats_filt.groupby(stats_agg_cols[:-1], as_index=False).agg({"count": "sum"})
+        all_stats_filt = all_stats_filt.groupby(stats_agg_cols[:-1], as_index=False).agg({"count": "sum"}).reset_index(drop=True)
 
         # Count A/C endings:
         ac_dict = dict()
@@ -164,7 +167,7 @@ class TRNA_plot:
 
         # Calculate read per million (RPM).
         # Notice, the Ecoli control is not counted in the total:
-        df_count = charge_df[~charge_df['Ecoli_ctr']].groupby(['sample_name_unique'], as_index=False).agg({"count": "sum"})
+        df_count = charge_df[~charge_df['Ecoli_ctr']].groupby(['sample_name_unique'], as_index=False).agg({"count": "sum"}).reset_index(drop=True)
         # Add the sample total count to the rows:
         charge_df = charge_df.merge(df_count, on='sample_name_unique', suffixes=('', '_sample_tot'))
         # Calculated the RPM and get rid of the total count:
@@ -173,19 +176,19 @@ class TRNA_plot:
 
         # Filter and group by same amino acid:
         aa_mask = charge_df['single_aa']
-        charge_df_aa = charge_df[aa_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'amino_acid', 'AA_letter', 'mito_codon', 'Ecoli_ctr'], as_index=False).agg({"count": "sum", "A_count": "sum", "C_count": "sum", "RPM": "sum"})
+        charge_df_aa = charge_df[aa_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'amino_acid', 'AA_letter', 'mito_codon', 'Ecoli_ctr'], as_index=False).agg({"count": "sum", "A_count": "sum", "C_count": "sum", "RPM": "sum"}).reset_index(drop=True)
         charge_df_aa['charge'] = 100 * charge_df_aa['A_count'] / charge_df_aa['count']
         self.charge_filt['aa'] = charge_df_aa
 
         # Filter and group by same codon:
         cd_mask = charge_df['single_codon']
-        charge_df_cd = charge_df[cd_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'codon', 'anticodon', 'AA_codon', 'amino_acid', 'AA_letter', 'mito_codon', 'Ecoli_ctr'], as_index=False).agg({"count": "sum", "A_count": "sum", "C_count": "sum", "RPM": "sum"})
+        charge_df_cd = charge_df[cd_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'codon', 'anticodon', 'AA_codon', 'amino_acid', 'AA_letter', 'mito_codon', 'Ecoli_ctr'], as_index=False).agg({"count": "sum", "A_count": "sum", "C_count": "sum", "RPM": "sum"}).reset_index(drop=True)
         charge_df_cd['charge'] = 100 * charge_df_cd['A_count'] / charge_df_cd['count']
         self.charge_filt['codon'] = charge_df_cd
 
         # Filter and group by same transcript:
         tr_mask = charge_df['unique_annotation']
-        charge_df_tr = charge_df[tr_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'tRNA_anno_short', 'tRNA_annotation_len', 'codon', 'anticodon', 'AA_codon', 'amino_acid', 'AA_letter', 'mito_codon', 'Ecoli_ctr'], as_index=False).agg({"count": "sum", "A_count": "sum", "C_count": "sum", "RPM": "sum"})
+        charge_df_tr = charge_df[tr_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'tRNA_anno_short', 'tRNA_annotation_len', 'codon', 'anticodon', 'AA_codon', 'amino_acid', 'AA_letter', 'mito_codon', 'Ecoli_ctr'], as_index=False).agg({"count": "sum", "A_count": "sum", "C_count": "sum", "RPM": "sum"}).reset_index(drop=True)
         charge_df_tr['charge'] = 100 * charge_df_tr['A_count'] / charge_df_tr['count']
         self.charge_filt['tr'] = charge_df_tr
         self.charge_df = charge_df
@@ -199,7 +202,9 @@ class TRNA_plot:
     def plot_Ecoli_ctr(self, plot_name='Ecoli_control', sample_list=None):
         pass
 
-    def plot_abundance(self, plot_type='aa', charge_plot=False, plot_name='abundance_plot_aa', min_obs=100, sample_list=None, verbose=True, sample_list_exl=None, bc_list_exl=None):
+    def plot_abundance(self, plot_type='aa', group=False, charge_plot=False, \
+        plot_name='abundance_plot_aa', min_obs=100, sample_list=None, verbose=True, \
+        sample_list_exl=None, bc_list_exl=None):
         if self.charge_df is None:
             self.get_charge_df()
 
@@ -217,12 +222,11 @@ class TRNA_plot:
         else:
             y_axis = 'RPM'
 
-
         if sample_list is None:
             sample_list = list(self.sample_df['sample_name'].drop_duplicates())
 
         if verbose:
-            print('\nNow plotting sample:', end='')
+            print('\nNow plotting sample/group:', end='')
 
         # Use a 40 color colormap:
         cmap_b = mpl.colormaps['tab20']
@@ -233,16 +237,28 @@ class TRNA_plot:
         cmap_b._i_over = 40
         cmap_b._i_under = 0
 
+        snam_df = self.sample_df.loc[:, ['sample_name', 'plot_group', 'hue_name', 'hue_value', 'hue_order']].drop_duplicates()
+        charge_df_type = charge_df_type.merge(snam_df, on='sample_name')
+        if group:
+            plot_iter = snam_df['plot_group'].drop_duplicates()
+        else:
+            plot_iter = snam_df['sample_name'].drop_duplicates()
+
         # Print each plot to the same PDF file:
         charge_fnam = '{}/{}.pdf'.format(self.plotting_dir_abs, plot_name)
         with PdfPages(charge_fnam) as pp:
             # Loop through and generate plots for each sample:
-            for sample_name in self.sample_df['sample_name'].drop_duplicates():
-                if not sample_name in sample_list:
+            for sg_name in plot_iter:
+                if group is False and not sg_name in sample_list:
                     continue
-                print('  {}'.format(sample_name), end='')
+                print('  {}'.format(sg_name), end='')
+
                 # Sample rows selected:
-                sample_mask = (charge_df_type['sample_name'] == sample_name) & (charge_df_type['count'] >= min_obs)
+                if group:
+                    sample_mask = (charge_df_type['plot_group'] == sg_name) & (charge_df_type['count'] >= min_obs)
+                else:
+                    sample_mask = (charge_df_type['sample_name'] == sg_name) & (charge_df_type['count'] >= min_obs)
+
                 # Exclude unique samples or barcodes:
                 if not sample_list_exl is None:
                     for unam in sample_list_exl:
@@ -252,71 +268,75 @@ class TRNA_plot:
                         sample_mask &= (charge_df_type['barcode'] != bc)
 
                 charge_sample = charge_df_type[sample_mask].copy()
-
                 # Plot separate for mito/cyto:
                 mask_cyto = (~charge_sample['Ecoli_ctr']) & (~charge_sample['mito_codon'])
                 mask_mito = (~charge_sample['Ecoli_ctr']) & (charge_sample['mito_codon'])
 
+                # Different settings for different plot types:
+                Ngrp = len(set(charge_sample['sample_name']))
+                hue_order = [t[0] for t in sorted(dict(zip(charge_sample['hue_value'].values, charge_sample['hue_order'].values)).items(), key=lambda x: x[1])]
                 if plot_type == 'aa':
-                    fig = plt.figure(figsize=(9, 9))
+                    x_axis = 'amino_acid'
+                    x_list_cyto = sorted(set(charge_sample['amino_acid'][mask_cyto].values), key=str.casefold)
+                    x_list_mito = sorted(set(charge_sample['amino_acid'][mask_mito].values), key=str.casefold)
+                    AA_set = set(x_list_cyto+x_list_mito)
+                    AAi = {aa:i for i, aa in enumerate(sorted(AA_set))}
+                    colors_cyto = {c: cmap_b(AAi[c]) for c in x_list_cyto}
+                    colors_mito = {c: cmap_b(AAi[c]) for c in x_list_mito}
+                    fig = plt.figure(figsize=(8*Ngrp, 9))
                     gs = fig.add_gridspec(2, 4)
                     ax1 = fig.add_subplot(gs[0, :])
                     ax2 = fig.add_subplot(gs[1, :])
-
-                    aa_list_cyto = sorted(set(charge_sample['amino_acid'][mask_cyto].values), key=str.casefold)
-                    aa_list_mito = sorted(set(charge_sample['amino_acid'][mask_mito].values), key=str.casefold)
-
-                    AA_set = set(aa_list_cyto+aa_list_mito)
-                    AAi = {aa:i for i, aa in enumerate(sorted(AA_set))}
-                    colors_cyto = {c: cmap_b(AAi[c]) for c in aa_list_cyto}
-                    colors_mito = {c: cmap_b(AAi[c]) for c in aa_list_mito}
-
-                    # Cyto tRNAs
-                    g1 = sns.barplot(ax=ax1, x='amino_acid', y=y_axis, order=aa_list_cyto, data=charge_sample[mask_cyto], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_cyto)
-                    # Mito tRNAs
-                    g2 = sns.barplot(ax=ax2, x='amino_acid', y=y_axis, order=aa_list_mito, data=charge_sample[mask_mito], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_mito)
-
                 elif plot_type == 'codon':
-                    fig = plt.figure(figsize=(20, 9))
+                    x_axis = 'AA_codon'
+                    x_list_cyto = sorted(set(charge_sample['AA_codon'][mask_cyto].values), key=str.casefold)
+                    x_list_mito = sorted(set(charge_sample['AA_codon'][mask_mito].values), key=str.casefold)
+                    AA_set = {c.split('-')[0] for c in x_list_cyto+x_list_mito}
+                    AAi = {aa:i for i, aa in enumerate(sorted(AA_set))}
+                    colors_cyto = {c: cmap_b(AAi[c.split('-')[0]]) for c in x_list_cyto}
+                    colors_mito = {c: cmap_b(AAi[c.split('-')[0]]) for c in x_list_mito}
+                    fig = plt.figure(figsize=(16*Ngrp, 9))
                     gs = fig.add_gridspec(2, 4)
                     ax1 = fig.add_subplot(gs[0, :])
                     ax2 = fig.add_subplot(gs[1, 1:3])
-
-                    codon_list_cyto = sorted(set(charge_sample['AA_codon'][mask_cyto].values), key=str.casefold)
-                    codon_list_mito = sorted(set(charge_sample['AA_codon'][mask_mito].values), key=str.casefold)
-
-                    AA_set = {c.split('-')[0] for c in codon_list_cyto+codon_list_mito}
-                    AAi = {aa:i for i, aa in enumerate(sorted(AA_set))}
-                    colors_cyto = {c: cmap_b(AAi[c.split('-')[0]]) for c in codon_list_cyto}
-                    colors_mito = {c: cmap_b(AAi[c.split('-')[0]]) for c in codon_list_mito}
-
-                    # Cyto tRNAs
-                    g1 = sns.barplot(ax=ax1, x='AA_codon', y=y_axis, order=codon_list_cyto, data=charge_sample[mask_cyto], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_cyto)
-                    # Mito tRNAs
-                    g2 = sns.barplot(ax=ax2, x='AA_codon', y=y_axis, order=codon_list_mito, data=charge_sample[mask_mito], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_mito)
-
                 elif plot_type == 'transcript':
-                    fig = plt.figure(figsize=(45, 15))
+                    x_axis = 'tRNA_anno_short'
+                    mask_cyto = (~charge_sample['Ecoli_ctr']) & (~charge_sample['mito_codon'])
+                    mask_mito = (~charge_sample['Ecoli_ctr']) & (charge_sample['mito_codon'])
+                    x_list_cyto = sorted(set(charge_sample['tRNA_anno_short'][mask_cyto].values), key=str.casefold)
+                    x_list_mito = sorted(set(charge_sample['tRNA_anno_short'][mask_mito].values), key=str.casefold)
+                    colors_cyto = None
+                    colors_mito = None
+                    fig = plt.figure(figsize=(45*Ngrp, 15))
                     gs = fig.add_gridspec(2, 10)
                     ax1 = fig.add_subplot(gs[0, :])
                     ax2 = fig.add_subplot(gs[1, 4:6])
 
-                    mask_cyto = (~charge_sample['Ecoli_ctr']) & (~charge_sample['mito_codon'])
-                    mask_mito = (~charge_sample['Ecoli_ctr']) & (charge_sample['mito_codon'])
-                    tr_list_cyto = sorted(set(charge_sample['tRNA_anno_short'][mask_cyto].values), key=str.casefold)
-                    tr_list_mito = sorted(set(charge_sample['tRNA_anno_short'][mask_mito].values), key=str.casefold)
-
+                # Plot either as grouped or single bars:
+                if group:
                     # Cyto tRNAs
-                    g1 = sns.barplot(ax=ax1, x='tRNA_anno_short', y=y_axis, order=tr_list_cyto, data=charge_sample[mask_cyto], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85)
+                    g1 = sns.barplot(ax=ax1, x=x_axis, y=y_axis, hue='hue_value', hue_order=hue_order, order=x_list_cyto, data=charge_sample[mask_cyto], capsize=.025, errwidth=2, edgecolor='black', linewidth=2, alpha=0.8)
                     # Mito tRNAs
-                    g2 = sns.barplot(ax=ax2, x='tRNA_anno_short', y=y_axis, order=tr_list_mito, data=charge_sample[mask_mito], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85)
+                    g2 = sns.barplot(ax=ax2, x=x_axis, y=y_axis, hue='hue_value', hue_order=hue_order, order=x_list_mito, data=charge_sample[mask_mito], capsize=.025, errwidth=2, edgecolor='black', linewidth=2, alpha=0.8)
+                    # Legend:
+                    g2.legend_.remove()
+                    old_legend = g1.legend_
+                    handles = old_legend.legendHandles
+                    labels = hue_order
+                    title = charge_sample['hue_name'].values[0]
+                    g1.legend(handles, labels, title=title, bbox_to_anchor=(1.01,1), borderaxespad=0)
+                else:
+                    # Cyto tRNAs
+                    g1 = sns.barplot(ax=ax1, x=x_axis, y=y_axis, order=x_list_cyto, data=charge_sample[mask_cyto], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_cyto)
+                    # Mito tRNAs
+                    g2 = sns.barplot(ax=ax2, x=x_axis, y=y_axis, order=x_list_mito, data=charge_sample[mask_mito], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_mito)
 
                 # Set axis/title text:
-                g1.set_title('Cytoplasmic tRNA for sample {}'.format(sample_name))
+                g1.set_title('Cytoplasmic tRNA for sample/group {}'.format(sg_name))
                 g1.set_xticklabels(g1.get_xticklabels(), rotation=90)
                 g1.grid(True, axis='y')
                 g1.set_xlabel('');
-                g2.set_title('Mitochondrial tRNA for sample {}'.format(sample_name))
+                g2.set_title('Mitochondrial tRNA for sample/group {}'.format(sg_name))
                 g2.set_xticklabels(g2.get_xticklabels(), rotation=90)
                 g2.grid(True, axis='y')
                 g2.set_xlabel('');
@@ -335,26 +355,142 @@ class TRNA_plot:
                 pp.savefig(fig, bbox_inches='tight')
                 plt.close(fig)
 
+    def plot_abundance_corr(self, sample_pairs=None, sample_unique_pairs=None, \
+        plot_type='aa', charge_plot=False, log=False, plot_name='abundance_corr_plot_aa', \
+        min_obs=100, sample_list=None, verbose=True, sample_list_exl=None, \
+        bc_list_exl=None):
+        if self.charge_df is None:
+            self.get_charge_df()
+
+        if plot_type == 'aa':
+            charge_df_type = self.charge_filt['aa']
+            merge_on = ['amino_acid', 'mito_codon', 'Ecoli_ctr']
+        elif plot_type == 'codon':
+            charge_df_type = self.charge_filt['codon']
+            merge_on = ['AA_codon', 'mito_codon', 'Ecoli_ctr']
+        elif plot_type == 'transcript':
+            charge_df_type = self.charge_filt['tr']
+            merge_on = ['tRNA_annotation', 'mito_codon', 'Ecoli_ctr']
+        else:
+            raise Exception('Unknown plot type specified: {}\nValid strings are either either "aa", "codon" or "transcript".'.format(plot_type))
+
+        # Enforce minimum observations,
+        # and not Ecoli control:
+        min_obs_mask = (charge_df_type['count'] > min_obs) & ~charge_df_type['Ecoli_ctr']
+        charge_df_type = charge_df_type[min_obs_mask]
+
+        if not sample_pairs is None:
+            assert(len(sample_pairs[0]) == len(sample_pairs[1]))
+            pair_list = sample_pairs
+
+            # Exclude samples/barcodes:
+            mask_exl = np.array([True]*len(charge_df_type))
+            if not sample_list_exl is None:
+                for snam in sample_list_exl:
+                    mask_exl &= (charge_df_type['sample_name_unique'] != snam)
+            if not bc_list_exl is None:
+                for bc in bc_list_exl:
+                    mask_exl &= (charge_df_type['barcode'] != bc)
+            charge_df_type = charge_df_type[mask_exl]
+            
+            # For sample names, merge replicates by taking the mean:
+            colnames = charge_df_type.columns
+            gr_cols = colnames.drop(['sample_name_unique', 'replicate', 'barcode', 'count', 'A_count', 'C_count', 'RPM', 'charge'])
+            charge_df_type = charge_df_type.groupby(list(gr_cols), as_index=False).agg({'RPM': 'mean', 'charge': 'mean'}).reset_index(drop=True)
+            charge_df_type_stdev = charge_df_type.groupby(list(gr_cols), as_index=False).agg({'RPM': 'std', 'charge': 'std'}).reset_index(drop=True)
+        elif not sample_unique_pairs is None:
+            assert(len(sample_unique_pairs[0]) == len(sample_unique_pairs[1]))
+            pair_list = sample_unique_pairs
+        else:
+            raise Exception('Neither sample_pairs nor sample_unique_pairs lists were provided.')
+
+        if charge_plot:
+            metric = 'charge'
+        else:
+            metric = 'RPM'
+
+        if sample_list is None:
+            sample_list = list(self.sample_df['sample_name'].drop_duplicates())
+
+        if verbose:
+            print('\nNow plotting sample pairs:', end='')
 
 
+        # Print each plot to the same PDF file:
+        corr_fnam = '{}/{}.pdf'.format(self.plotting_dir_abs, plot_name)
+        with PdfPages(corr_fnam) as pp:
+            # Plot each pair:
+            for p1, p2 in zip(*pair_list):
+                # Either as unique samples are with replicates:
+                if not sample_pairs is None:
+                    mask1 = charge_df_type['sample_name'] == p1
+                    mask2 = charge_df_type['sample_name'] == p2
+                else:
+                    mask1 = charge_df_type['sample_name_unique'] == p1
+                    mask2 = charge_df_type['sample_name_unique'] == p2
 
-    def plot_charge_corr(self, sample_pair_list):
-        # Plot the charge of sample vs sample
-        pass
-    
-    
-    def plot_RPM_corr(self, sample_pair_list):
-        # Plot the RPM of sample vs sample
-        pass
-    
-    
-    
+                if mask1.sum() == 0 or mask2.sum() == 0:
+                    continue
+                print('  ({} - {})'.format(p1, p2), end='')
 
+                # If charge is plotted both samples
+                # have to be present, if RPM is plotted
+                # it can be zero in one sample and >0 in another:
+                if not charge_plot and min_obs == 0:
+                    merge_how = 'outer'
+                else:
+                    merge_how = 'inner'
 
-    
-    
-    
-    
+                # Merge the two:
+                m12 = pd.merge(
+                    charge_df_type[mask1],
+                    charge_df_type[mask2],
+                    how=merge_how,
+                    on=merge_on,
+                    left_index=False,
+                    right_index=False,
+                    sort=True,
+                    suffixes=("_1", "_2"),
+                    copy=True,
+                    indicator=False,
+                    validate=None,
+                )
+                m12 = m12.fillna(0)
+
+                # Handle if log transform is requested:
+                if log:
+                    mask0 = (m12[metric+'_1'] > 0) & (m12[metric+'_2'] > 0)
+                    m12 = m12[mask0]
+                    m12[metric+'_1'] = np.log10(m12[metric+'_1'])
+                    m12[metric+'_2'] = np.log10(m12[metric+'_2'])
+
+                # Plot the scatterplot:
+                fig, ax = plt.subplots(1, 1, figsize=(7, 6))
+                g1 = sns.regplot(ax=ax, data=m12, x=metric+'_1', y=metric+'_2')
+                if not charge_plot:
+                    xy_min = [min(g1.get_xlim()), min(g1.get_ylim())]
+                    xy_max = [max(g1.get_xlim()), max(g1.get_ylim())]
+                    ax.plot([max(xy_min), min(xy_max)], [max(xy_min), min(xy_max)], c='r')
+
+                # Set axis/title text:
+                g1.set_title('Correlation between {} and {}'.format(p1, p2))
+                # g1.grid(True, axis='y')
+
+                if charge_plot is True:
+                    g1.set_xlabel('Charge (%), {}'.format(p1));
+                    g1.set_ylabel('Charge (%), {}'.format(p2));
+                elif log is True:
+                    g1.set_xlabel('Abundance (log10 RPM), {}'.format(p1));
+                    g1.set_ylabel('Abundance (log10 RPM), {}'.format(p2));
+                else:
+                    g1.set_xlabel('Abundance (RPM), {}'.format(p1));
+                    g1.set_ylabel('Abundance (RPM), {}'.format(p2));
+
+                # Write to PDF file:
+                fig.tight_layout()
+                pp.savefig(fig, bbox_inches='tight')
+                plt.close(fig)
+
     def plot_coverage(self, compartment='cyto', plot_type='needle', aa_norm=False, y_norm=False, plot_name='cov_plot_cyto_needle', sample_list=None, verbose=True):
         # Check input:
         if plot_type != 'behrens' and plot_type != 'needle':

@@ -58,6 +58,7 @@ class AR_merge:
             os.chdir(self.dir_dict['NBdir'])
             raise err
 
+    '''
     def run_serial(self, overwrite=True):
         self.AR_overwrite = overwrite
         os.chdir(self.AdapterRemoval_dir_abs)
@@ -69,6 +70,7 @@ class AR_merge:
         except Exception as err:
             os.chdir(self.dir_dict['NBdir'])
             raise err
+    '''
 
     def __start_AR(self, index, row):
         AR_cmd = self.AR_cmd_tmp.copy()
@@ -147,7 +149,7 @@ class BC_split:
                 print('Using existing folder because overwrite set to false: {}'.format(self.BC_dir_abs))
         return(self.BC_dir_abs)
 
-    def run_parallel(self, n_jobs=4, overwrite=True):
+    def run_parallel(self, n_jobs=4, load_previous=False):
         # Must check that not too many file handles are opened at the same time:
         max_fh = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
         fh_div = len(self.sample_df)*3 // max_fh
@@ -156,18 +158,23 @@ class BC_split:
         except:
             raise Exception('Large number of samples, could cause problems with too many open filehandles under parallel processing. Either switch to serial processing, or implement parallel processing in smaller chunks.')
 
-        if overwrite:
+        if load_previous is False:
             # Run parallel:
             data = list(self.inp_file_df.iterrows())
             with WorkerPool(n_jobs=n_jobs) as pool:
                 results = pool.map(self.__split_file, data)
             self.__collect_stats(results)
         else:
-            self.inp_file_df = pd.read_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
-            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
-
+            try:
+                self.inp_file_df = pd.read_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
+                self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
+                print('Loaded results from previous run... Not running barcode split.')
+            except Exception as err:
+                print('Attempted to read previous stats from index-pair_stats and sample_stats, but failed...')
+                raise err
         return(self.sample_df, self.inp_file_df)
 
+    '''
     def run_serial(self, overwrite=True):
         if overwrite:
             results = [self.__split_file(index, row) for index, row in self.inp_file_df.iterrows()]
@@ -177,6 +184,7 @@ class BC_split:
             self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
 
         return(self.sample_df, self.inp_file_df)
+    '''
 
     def __split_file(self, index, row):
         basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
@@ -414,9 +422,10 @@ class BC_analysis:
             else:
                 print('Using existing folder because overwrite set to false: {}'.format(self.BCanalysis_dir_abs))
 
-    def search_unmapped(self, search_size=13, group_dist=1, overwrite=True):
-        if not overwrite:
+    def search_unmapped(self, search_size=13, group_dist=1, load_previous=False):
+        if load_previous:
             self.sum_df = pd.read_excel('{}/{}{}_unmapped-BC-analysis.xlsx'.format(self.BCanalysis_dir_abs, 'ALL-groupby-dist-', group_dist), index_col=0)
+            print('Loaded results from previous run... Not running barcode analysis.')
             return(self.sum_df)
 
         # Find closest barcode and store in dictionary:
@@ -541,17 +550,23 @@ class UMI_trim:
                 print('Using existing folder because overwrite set to false: {}'.format(self.UMI_dir_abs))
         return(self.UMI_dir_abs)
 
-    def run_parallel(self, n_jobs=4, overwrite=True):
-        if overwrite:
+    def run_parallel(self, n_jobs=4, load_previous=False):
+        if load_previous is False:
             # Run parallel:
             data = list(self.sample_df.iterrows())
             with WorkerPool(n_jobs=n_jobs) as pool:
                 results = pool.map(self.__trim_file, data)
             self.__collect_stats(results)
         else:
-            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs), index_col=0)
+            try:
+                self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs), index_col=0)
+                print('Loaded results from previous run... Not running UMI trimming.')
+            except Exception as err:
+                print('Attempted to read previous stats from sample_stats, but failed...')
+                raise err
         return(self.sample_df)
 
+    '''
     def run_serial(self, overwrite=True):
         if overwrite:
             results = [self.__trim_file(index, row) for index, row in self.sample_df.iterrows()]
@@ -559,6 +574,7 @@ class UMI_trim:
         else:
             self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs), index_col=0)
         return(self.sample_df)
+    '''
     
     def __trim_file(self, index, row):
         input_fnam = '{}/{}.fastq.bz2'.format(self.BC_dir_abs, row['sample_name_unique'])
