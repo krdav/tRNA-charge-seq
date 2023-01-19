@@ -197,14 +197,22 @@ class TM_analysis:
                 # so one read contributes with one observation:
                 weight = 1.0 / len(alignments) * total_count
                 for alignment in alignments:
-                    weight_dict[anno].append(weight)
-                    # Initiate the character array:
-                    char_ar = np.empty(len(target), dtype='<U1')
                     # Extract the alignment coordinates:
                     t_cor, q_cor = alignment.aligned
                     if (t_cor[-1, -1] + 1) < tr_muts_sp[species][anno]['seq_len']:
-                        raise Exception('Sequence should be 3p aligned but appears not to be...')
-
+                        # Sometimes the change in alignment reward/penalties between 
+                        # SWIPE and what is specified for transcript mutation analysis
+                        # makes the alignment shift. This is particularly the case
+                        # when a large gap is opened in the middle of the read and
+                        # SWIPE aligns the right part to the 3p end of the reference
+                        # and the above alignment aligns the left part to some other
+                        # place in the reference.
+                        # These are very rare events (probably less the 1/100,000),
+                        # so we simply skip them:
+                        continue
+                    weight_dict[anno].append(weight)
+                    # Initiate the character array:
+                    char_ar = np.empty(len(target), dtype='<U1')
                     # Find gaps:
                     for i in range(1, len(t_cor)):
                         for j in range(t_cor[i][0] - t_cor[i-1][1]):
