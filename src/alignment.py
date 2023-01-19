@@ -172,6 +172,8 @@ class SWIPE_align:
         # that "SWres_fnam" is finished writing.
         SWres_fnam = '{}_SWalign.json.bz2'.format(sample_name_unique)
         if not self.SWIPE_overwrite and os.path.isfile(SWres_fnam) and not os.path.isfile(swipe_outfile):
+            if self.verbose:
+                print('  skipping:{}'.format(sample_name_unique), end='')
             return(1)
 
         # Prepare sequences for SWIPE:
