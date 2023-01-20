@@ -1,4 +1,4 @@
-import sys, os, shutil, bz2, copy, contextlib
+import sys, os, shutil, bz2, copy, contextlib, gc
 from subprocess import Popen, PIPE, STDOUT
 from Bio import SeqIO
 from Bio import Align
@@ -168,11 +168,11 @@ class TM_analysis:
         # Read the stats file to get the old alignment annotations:
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
         with bz2.open(stats_fnam, 'rt', encoding="utf-8") as stats_fh:
-            sample_stats = pd.read_csv(stats_fh, keep_default_na=False)
-        ID2idx = {readID: i for i, readID in enumerate(sample_stats['readID'])}
+            sample_stats = pd.read_csv(stats_fh, keep_default_na=False, low_memory=False)
+        ID2anno = {rid: tan.split('@') for rid, tan, _3c in zip(sample_stats['readID'], sample_stats['tRNA_annotation'], sample_stats['3p_cover']) if _3c}
+        del sample_stats
+        gc.collect()
 
-        # To keep each read having weight 1:
-        char_list = list() # 
         for seq in dedup_seq_count:
             # Check if common sequence, then readID has changed:
             if not self.common_seqs_fnam is None and seq in self.common_seqs_dict:
@@ -180,18 +180,12 @@ class TM_analysis:
             else:
                 readID = dedup_seq_count[seq]['id']
 
-            # Get the index in the alignment statistics:
-            if readID in ID2idx:
-                idx = ID2idx[readID]
+            # Get list of annotations:
+            if readID in ID2anno:
+                anno_list = ID2anno[readID]
             else:
                 # Skip unaligned reads:
                 continue
-            stats_row = sample_stats.loc[idx, :]
-            if not stats_row['3p_cover']:
-                # Skip reads that do not have 3p coverage:
-                continue
-            # Get list of annotations:
-            anno_list = stats_row['tRNA_annotation'].split('@')
             # Skip if multiple annotations found but unique requested:
             if self.unique_anno and len(anno_list) > 1:
                 continue
