@@ -122,20 +122,24 @@ class TRNA_plot:
     def get_charge_df(self):
         # Filter and group to only extract rows
         # valid for charge determination:
-        stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'tRNA_anno_short', 'tRNA_annotation_len', 'unique_annotation', 'codon', 'anticodon', 'AA_codon', 'amino_acid', 'single_codon', 'single_aa', 'mito_codon', 'Ecoli_ctr', 'AA_letter', 'align_3p_nt', 'count']
+        stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', \
+                          'tRNA_annotation', 'tRNA_anno_short', 'tRNA_annotation_len', \
+                          'unique_annotation', 'codon', 'anticodon', 'AA_codon', 'amino_acid', \
+                          'single_codon', 'single_aa', 'mito_codon', 'Ecoli_ctr', 'AA_letter', \
+                          'align_3p_nt', 'count']
         row_mask = ((self.all_stats['align_3p_nt'] == 'A') | (self.all_stats['align_3p_nt'] == 'C'))
         all_stats_filt = self.all_stats.loc[row_mask, stats_agg_cols]
         all_stats_filt = all_stats_filt.groupby(stats_agg_cols[:-1], as_index=False).agg({"count": "sum"}).reset_index(drop=True)
 
         # Count A/C endings:
         ac_dict = dict()
-        for _, row in all_stats_filt.iterrows():
-            key = (row['sample_name_unique'], row['tRNA_annotation'])
+        for snu, tan, _3nt, count in zip(all_stats_filt['sample_name_unique'], all_stats_filt['tRNA_annotation'], all_stats_filt['align_3p_nt'], all_stats_filt['count']):
+            key = (snu, tan)
             if key in ac_dict:
-                ac_dict[key][row['align_3p_nt']] = row['count']
+                ac_dict[key][_3nt] = count
             else:
                 ac_dict[key] = dict()
-                ac_dict[key][row['align_3p_nt']] = row['count']
+                ac_dict[key][_3nt] = count
 
         # Add 0 count if count is missing:
         for key in ac_dict.keys():
@@ -145,23 +149,26 @@ class TRNA_plot:
                 ac_dict[key]['C'] = 0
 
         # Make charge dataframe:
-        row_list = list()
+        row_mask = np.zeros(len(all_stats_filt), dtype=bool)
         bag = set() # avoid duplicates
-        for _, row in all_stats_filt.loc[:, stats_agg_cols[:-2]].iterrows():    
+        a_count = list()
+        c_count = list()
+        for row_idx, key in enumerate(zip(all_stats_filt['sample_name_unique'], all_stats_filt['tRNA_annotation'])):    
             # Take the first encounter of a row:
-            key = (row['sample_name_unique'], row['tRNA_annotation'])
             if key in bag:
                 continue
             else:
                 bag.add(key)
-            # Get and add the A/C count:
-            a_count = ac_dict[key]['A']
-            c_count = ac_dict[key]['C']
-            new_row = np.concatenate((row, [a_count, c_count]))
-            row_list.append(new_row)
+            row_mask[row_idx] = True
 
-        # Calculate the charge:
-        charge_df = pd.DataFrame(row_list, columns=(stats_agg_cols[:-2] + ['A_count', 'C_count']))
+            # Get and add the A/C count:
+            a_count.append(ac_dict[key]['A'])
+            c_count.append(ac_dict[key]['C'])
+
+        # Extract the dataframe and calculate the charge:
+        charge_df = all_stats_filt.loc[row_mask, stats_agg_cols[:-2]].copy()
+        charge_df['A_count'] = a_count
+        charge_df['C_count'] = c_count
         charge_df['count'] = charge_df['A_count']+charge_df['C_count']
         charge_df['charge'] = 100*charge_df['A_count'] / charge_df['count']
 
@@ -821,14 +828,13 @@ class TRNA_plot:
         cov_count = np.zeros((len(aa_order), max_len))
         # Each row has an amino acid letter, align_5p_idx and a count.
         # Insert these into the matrix:
-        for _, cov_row in cov_df.iterrows():
-            aa_idx = aa_order[cov_row['AA_letter']]
-            _5p_idx = cov_row['align_5p_idx'] - 1 # shift alignment index to 0 indexing
-            anno_len = cov_row['tRNA_annotation_len']
-            _5p_idx_trans = len_map_len[anno_len][_5p_idx]
+        for aa_let, _5pi, alen, count in zip(cov_df['AA_letter'], cov_df['align_5p_idx'], cov_df['tRNA_annotation_len'], cov_df['count']):
+            aa_idx = aa_order[aa_let]
+            _5p_idx = _5pi - 1 # shift alignment index to 0 indexing
+            _5p_idx_trans = len_map_len[alen][_5p_idx]
             # Amino acids have multiple codons, each with multiple
             # transcripts that can vary in length, thus add instead of assign:
-            cov_count[aa_idx, _5p_idx_trans] += cov_row['count']
+            cov_count[aa_idx, _5p_idx_trans] += count
 
         # Each count in the matrix repressents a number of reads
         # and their length mapped to the tRNA. Now this is converted
