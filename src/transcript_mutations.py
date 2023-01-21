@@ -28,7 +28,9 @@ class TM_analysis:
     transcript mutations i.e. the mismatches and gaps in the
     alignment between a read and its tRNA transcript.
     '''
-    def __init__(self, dir_dict, sample_df, tRNA_database, pull_default=False, common_seqs=None, ignore_common_count=False):
+    def __init__(self, dir_dict, sample_df, tRNA_database, \
+                 pull_default=False, common_seqs=None, ignore_common_count=False, \
+                 overwrite_dir=False):
         # Input:
         self.sample_df, self.tRNA_database = sample_df, tRNA_database
         self.dir_dict = dir_dict
@@ -70,15 +72,21 @@ class TM_analysis:
         # Make a dictionary template to fill out
         # for each sample that is read:
         self.tr_muts_tmp = dict()
+        self.longest_tRNA = 0 # length of the longest tRNA
         # Read the tRNA transcripts:
         for species in tRNA_database:
             self.tr_muts_tmp[species] = dict()
             for record in SeqIO.parse(tRNA_database[species], "fasta"):
+                seq_len = len(record.seq)
+                if seq_len > self.longest_tRNA:
+                    self.longest_tRNA = seq_len
                 self.tr_muts_tmp[species][record.id] = dict()
                 self.tr_muts_tmp[species][record.id]['seq'] = str(record.seq)
-                self.tr_muts_tmp[species][record.id]['seq_len'] = len(record.seq)
+                self.tr_muts_tmp[species][record.id]['seq_len'] = seq_len
                 # Position specific count matrix:
-                self.tr_muts_tmp[species][record.id]['PSCM'] = np.zeros((len(record.seq), len(self.char_list)))
+                self.tr_muts_tmp[species][record.id]['PSCM'] = np.zeros((seq_len, len(self.char_list)))
+                self.tr_muts_tmp[species][record.id]['mut_freq'] = np.zeros(seq_len)
+                self.tr_muts_tmp[species][record.id]['gap_freq'] = np.zeros(seq_len)
 
         # Make name to sequence dictionary for common sequences:
         if not self.common_seqs_fnam is None:
@@ -101,7 +109,10 @@ class TM_analysis:
                     assert(not seq in self.common_seqs_dict)
                     self.common_seqs_dict[seq] = ridx
 
-    def make_dir(self, overwrite=True):
+        # Make output folder:
+        self.__make_dir(overwrite_dir)
+
+    def __make_dir(self, overwrite):
         # Create folder for files:
         self.TM_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['TM_dir'])
         try:
@@ -112,11 +123,10 @@ class TM_analysis:
                 os.mkdir(self.TM_dir_abs)
             else:
                 print('Folder exists and overwrite set to false... Doing nothing.')
-        return(self.TM_dir_abs)
 
     def find_muts(self, unique_anno=True, match_score=1, mismatch_score=-1, \
                   open_gap_score=-2, extend_gap_score=-1, n_jobs=4, verbose=True, \
-                  sample_list=None):
+                  sample_list=None, fix_end=True):
         self.verbose = verbose
         if self.verbose:
             print('Collecting stats from:', end='')
@@ -134,6 +144,9 @@ class TM_analysis:
         for unam_res in results:
             unam, res = unam_res
             self.tr_muts[unam] = res
+        # Fix ends if requested:
+        if fix_end:
+            self.__fix_end()
 
     def __collect_transcript_muts(self, index, row):
         if self.verbose:
@@ -227,14 +240,25 @@ class TM_analysis:
                             count_mat[ti, self.char_dict[seq[qi]]] = weight
                     tr_muts_sp[species][anno]['PSCM'] += count_mat
 
-        # Convert the count matrix to dataframe and return:
+        # Convert the count matrix to dataframe
+        # calculate mutation/gap frequencies and return:
         for anno in tr_muts_sp[species]:
             tr_muts_sp[species][anno]['PSCM'] = pd.DataFrame(tr_muts_sp[species][anno]['PSCM'], columns=self.char_list)
+            if tr_muts_sp[species][anno]['PSCM'].max().max() > 0:
+                # Mutation frequencies:
+                freq_mut = self.__calc_mut_freq(tr_muts_sp, anno, species, gap_only=False, min_count_show=0)
+                tr_muts_sp[species][anno]['mut_freq'] = freq_mut
+                # Gap frequencies:
+                freq_gap = self.__calc_mut_freq(tr_muts_sp, anno, species, gap_only=True, min_count_show=0)
+                tr_muts_sp[species][anno]['gap_freq'] = freq_gap
+
         return((row['sample_name_unique'], tr_muts_sp))
  
-    def __combine_tr_muts(self, sample_list):
+    def __combine_tr_muts(self, sample_list, freq_avg_weighted=True):
         sample_list_cp = copy.deepcopy(sample_list)
         tr_muts_combi = copy.deepcopy(self.tr_muts_tmp)
+
+        avg_count = 0 # for cumulative average
         for unam, sp_muts in self.tr_muts.items():
             # Skip if sample name not requested:
             if not unam in sample_list:
@@ -252,14 +276,29 @@ class TM_analysis:
                 # Fill the dictionary for all samples:
                 if tr_muts_combi[species][anno]['PSCM'].max().max() == 0:
                     tr_muts_combi[species][anno]['PSCM'] = sp_muts[species][anno]['PSCM']
+                    tr_muts_combi[species][anno]['mut_freq'] = sp_muts[species][anno]['mut_freq']
+                    tr_muts_combi[species][anno]['gap_freq'] = sp_muts[species][anno]['gap_freq']
                 else:
                     tr_muts_combi[species][anno]['PSCM'] += sp_muts[species][anno]['PSCM']
+                    # Take the cumulative average for the frequencies:
+                    tr_muts_combi[species][anno]['mut_freq'] = (sp_muts[species][anno]['mut_freq'] + avg_count*tr_muts_combi[species][anno]['mut_freq']) / (avg_count+1)
+                    tr_muts_combi[species][anno]['gap_freq'] = (sp_muts[species][anno]['gap_freq'] + avg_count*tr_muts_combi[species][anno]['gap_freq']) / (avg_count+1)
+            avg_count += 1
+
+            # Get the frequency average weighted by total observations:
+            if freq_avg_weighted:
+                for anno in sp_muts[species]:
+                    # Skip if no observations:
+                    if sp_muts[species][anno]['PSCM'].max().max() == 0:
+                        continue
+                    tr_muts_combi[species][anno]['mut_freq'] = self.__calc_mut_freq(tr_muts_combi, anno, species, gap_only=False, min_count_show=0)
+                    tr_muts_combi[species][anno]['gap_freq'] = self.__calc_mut_freq(tr_muts_combi, anno, species, gap_only=True, min_count_show=0)
 
         if len(sample_list_cp) > 0:
             print('Following samples could not be found and therefore not combined: {}'.format(str(sample_list_cp)))
         return(tr_muts_combi)
 
-    def fix_end(self):
+    def __fix_end(self):
         for unam in self.tr_muts:
             for species in self.tr_muts[unam]:
                 for anno in self.tr_muts[unam][species]:
@@ -279,13 +318,7 @@ class TM_analysis:
         tr_muts_combi = self.__combine_tr_muts(sample_list)
 
         # Sort according to observations:
-        anno2obs = dict()
-        for anno in tr_muts_combi[species]:
-            if tr_muts_combi[species][anno]['PSCM'].max().max() > 0:
-                # The all count in the second to last row i.e. C in CCA:
-                obs = tr_muts_combi[species][anno]['PSCM'].sum(1).values[-2]
-                anno2obs[anno] = obs
-        anno_sorted = sorted(anno2obs.items(), key=lambda x: x[1], reverse=True)
+        anno_sorted = self.__sort_anno(tr_muts_combi, species)
         if topN > len(anno_sorted):
             topN = len(anno_sorted)
 
@@ -317,28 +350,17 @@ class TM_analysis:
         tr_muts_combi = self.__combine_tr_muts(sample_list)
 
         # Sort according to observations:
-        anno2obs = dict()
-        longest_tRNA = 0
-        for anno in tr_muts_combi[species]:
-            # If mito is specified, skip non-mito annotations:
-            if mito and 'mito' not in anno:
-                continue
-            tRNA_len = tr_muts_combi[species][anno]['seq_len']
-            if tr_muts_combi[species][anno]['PSCM'].max().max() > 0:
-                # The all count in the second to last row i.e. C in CCA:
-                obs = tr_muts_combi[species][anno]['PSCM'].sum(1).values[-2]
-                anno2obs[anno] = obs
-                if tRNA_len > longest_tRNA:
-                    longest_tRNA = tRNA_len
-        anno_sorted = sorted(anno2obs.items(), key=lambda x: x[1], reverse=True)
+        anno_sorted = self.__sort_anno(tr_muts_combi, species, mito=mito)
         if topN > len(anno_sorted):
             topN = len(anno_sorted)
         
         # Find the observations and insert them into a matrix:
-        obs_mat = np.zeros((topN, longest_tRNA))
+        obs_mat = np.zeros((topN, self.longest_tRNA))
         anno_topN = [anno_sorted[i][0] for i in range(topN)]
         for i in range(topN):
             anno = anno_topN[i]
+            if mito and 'mito' not in anno:
+                continue
             # Count all observations for a given positions:
             counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1)
             # Insert from right side so CCA is always indexed
@@ -396,72 +418,63 @@ class TM_analysis:
         else:
             return((obs_mat_df, fig, sorted_anno))
 
+
+
+
+    def plot_transcript_mut_compare(self, species='human', \
+                                    plot_name='tr-mut_matrix_comp', \
+                                    png_dpi=False, no_plot_return=False, \
+                                    mito=False, gap_only=False, \
+                                    sort_rows=True, min_count_show=100, \
+                                    sample_pairs=None, sample_unique_pairs=None, \
+                                    compare_lisr=None, \
+                                    sample_list_exl=None, bc_list_exl=None):
+        pass
+
+
+
+
+
+
+
+
+
+
+
     def plot_transcript_mut(self, topN=50, species='human', plot_name='tr-mut_matrix', \
-        png_dpi=False, no_plot_return=False, mito=False, gap_only=False, \
-        sort_rows=True, min_count_show=10, sample_list=None):
+                            png_dpi=False, no_plot_return=False, mito=False, gap_only=False, \
+                            sort_rows=True, min_count_show=10, sample_list=None,
+                            freq_avg_weighted=True):
         # Get the mutations combined for the requested samples:
         if sample_list is None:
             sample_list = list(self.tr_muts.keys())
-        tr_muts_combi = self.__combine_tr_muts(sample_list)
+        tr_muts_combi = self.__combine_tr_muts(sample_list, freq_avg_weighted=freq_avg_weighted)
 
         # Sort according to observations:
-        anno2obs = dict()
-        longest_tRNA = 0
-        for anno in tr_muts_combi[species]:
-            # If mito is specified, skip non-mito annotations:
-            if mito and 'mito' not in anno:
-                continue
-            tRNA_len = tr_muts_combi[species][anno]['seq_len']
-            if tr_muts_combi[species][anno]['PSCM'].max().max() > 0:
-                # The all count in the second to last row i.e. C in CCA:
-                obs = tr_muts_combi[species][anno]['PSCM'].sum(1).values[-2]
-                anno2obs[anno] = obs
-                if tRNA_len > longest_tRNA:
-                    longest_tRNA = tRNA_len
-        anno_sorted = sorted(anno2obs.items(), key=lambda x: x[1], reverse=True)
+        anno_sorted = self.__sort_anno(tr_muts_combi, species, mito=mito)
         if topN > len(anno_sorted):
             topN = len(anno_sorted)
         # Find the mutations and insert them into a matrix:
-        mut_mat = np.zeros((topN, longest_tRNA))
+        mut_mat = np.zeros((topN, self.longest_tRNA))
         anno_topN = [anno_sorted[i][0] for i in range(topN)]
         anno_skip = set() # Skip these because of lacking observations
         for i in range(topN):
             anno = anno_topN[i]
-            tr_len = tr_muts_combi[species][anno]['seq_len']
-            tr_seq = tr_muts_combi[species][anno]['seq']
-
-            # Calculate the mutation (or gap) frequency per sequence position #
-            # First count all observations for a given positions:
-            counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1)
-            # Enforce a minimum number of observations:
-            min_count_mask = counts_all >= min_count_show
-            if min_count_mask.sum() == 0:
-                anno_skip.add(anno)
-                continue
-            counts_all.loc[~min_count_mask] = 0
-            
             if gap_only:
-                # Make a mask to count all the gaps:
-                count_mask = np.zeros((tr_len, len(self.char_list)))
-                tr_char_idx = [self.char_dict['-'] for _ in range(tr_len)]
-                for seq_i, char_i in enumerate(tr_char_idx):
-                    count_mask[seq_i, char_i] = 1
-                counts_gap = (tr_muts_combi[species][anno]['PSCM'] * count_mask).sum(1)
-                # np.divide setting 0/0 to 0 i.e. no observations, no gap
-                freq_mut = np.divide(counts_gap, counts_all, out=np.zeros_like(counts_gap), where=counts_all!=0)
+                freq_mut = tr_muts_combi[species][anno]['gap_freq']
             else:
-                # Make a mask to count all the non-mutant characters:
-                count_mask = np.zeros((tr_len, len(self.char_list)))
-                tr_char_idx = [self.char_dict[nt] for nt in tr_seq]
-                for seq_i, char_i in enumerate(tr_char_idx):
-                    count_mask[seq_i, char_i] = 1
-                counts_cor = (tr_muts_combi[species][anno]['PSCM'] * count_mask).sum(1)
-                # np.divide setting 0/0 to 1, i.e. no observation, no mutation
-                freq_mut = 1 - np.divide(counts_cor, counts_all, out=np.ones_like(counts_cor), where=counts_all!=0)
+                freq_mut = tr_muts_combi[species][anno]['mut_freq']
 
-            # Insert from right side so CCA is always indexed
-            # at the highest index:
-            mut_mat[i, -len(freq_mut):] = freq_mut
+            # Enforce a minimum number of observations:
+            counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1)
+            min_count_mask = counts_all >= min_count_show
+            if min_count_mask.sum() == 0 or freq_mut is None:
+                anno_skip.add(anno)
+            else:
+                freq_mut[~min_count_mask] = 0
+                # Insert from right side so CCA is always indexed
+                # at the highest index:
+                mut_mat[i, -len(freq_mut):] = freq_mut
 
         # Filter out the entries with no positions above min_count_show:
         anno_idx_nozero = [aidx for aidx, anno in enumerate(anno_topN) if not anno in anno_skip]
@@ -514,47 +527,82 @@ class TM_analysis:
             return((mut_mat_df, None, sorted_anno))
         else:
             return((mut_mat_df, fig, sorted_anno))
-                
+
+    def __sort_anno(self, tr_muts_combi, species, mito=False):
+        # Sort according to observations:
+        anno2obs = dict()
+        for anno in tr_muts_combi[species]:
+            # If mito is specified, skip non-mito annotations:
+            if mito and 'mito' not in anno:
+                continue
+            tRNA_len = tr_muts_combi[species][anno]['seq_len']
+            if tr_muts_combi[species][anno]['PSCM'].max().max() > 0:
+                # The all count in the second to last row i.e. C in CCA:
+                obs = tr_muts_combi[species][anno]['PSCM'].sum(1).values[-2]
+                anno2obs[anno] = obs
+        anno_sorted = sorted(anno2obs.items(), key=lambda x: x[1], reverse=True)
+        return(anno_sorted)
+
+    def __calc_mut_freq(self, tr_muts_combi, anno, species, gap_only, min_count_show):
+        tr_len = tr_muts_combi[species][anno]['seq_len']
+        tr_seq = tr_muts_combi[species][anno]['seq']
+
+        # Calculate the mutation (or gap) frequency per sequence position #
+        # First count all observations for a given positions:
+        counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1)
+        # Enforce a minimum number of observations:
+        min_count_mask = counts_all >= min_count_show
+        if min_count_mask.sum() == 0:
+            return(None)
+        counts_all.loc[~min_count_mask] = 0
+        
+        if gap_only:
+            # Make a mask to count all the gaps:
+            count_mask = np.zeros((tr_len, len(self.char_list)))
+            tr_char_idx = [self.char_dict['-'] for _ in range(tr_len)]
+            for seq_i, char_i in enumerate(tr_char_idx):
+                count_mask[seq_i, char_i] = 1
+            counts_gap = (tr_muts_combi[species][anno]['PSCM'] * count_mask).sum(1)
+            # np.divide setting 0/0 to 0 i.e. no observations, no gap
+            freq_mut = np.divide(counts_gap, counts_all, out=np.zeros_like(counts_gap), where=counts_all!=0)
+        else:
+            # Make a mask to count all the non-mutant characters:
+            count_mask = np.zeros((tr_len, len(self.char_list)))
+            tr_char_idx = [self.char_dict[nt] for nt in tr_seq]
+            for seq_i, char_i in enumerate(tr_char_idx):
+                count_mask[seq_i, char_i] = 1
+            counts_cor = (tr_muts_combi[species][anno]['PSCM'] * count_mask).sum(1)
+            # np.divide setting 0/0 to 1, i.e. no observation, no mutation
+            freq_mut = 1 - np.divide(counts_cor, counts_all, out=np.ones_like(counts_cor), where=counts_all!=0)
+        return(freq_mut.values)
 
     def mask_tRNA_database(self, min_mut_freq=0.1, min_pos_count=10, min_tr_count=30, \
                            frac_max_score=0.90, match_score=1, mismatch_score=-1, \
-                           open_gap_score=-2, extend_gap_score=-2, sample_list=None):
+                           open_gap_score=-2, extend_gap_score=-2, sample_list=None,
+                           freq_avg_weighted=True):
         # Get the mutations combined for the requested samples:
         if sample_list is None:
             sample_list = list(self.tr_muts.keys())
-        tr_muts_combi = self.__combine_tr_muts(sample_list)
+        tr_muts_combi = self.__combine_tr_muts(sample_list, freq_avg_weighted=freq_avg_weighted)
 
         # Find and store masked sequence #
         for species in tr_muts_combi:
             for anno in tr_muts_combi[species]:
-                tr_len = tr_muts_combi[species][anno]['seq_len']
-                tr_seq = tr_muts_combi[species][anno]['seq']
-                if tr_len == 0:  # Skip no observations
-                    continue
-                
-                # Calculate the mutation frequency per sequence position #
-                # First, count all observations for a given positions:
-                counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1)
+                # Get the mutation frequency per sequence position:
+                freq_mut = tr_muts_combi[species][anno]['mut_freq']
                 # Enforce a minimum number of observations:
+                counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1)
                 min_count_mask = counts_all >= min_pos_count
-                if min_count_mask.sum() == 0 or counts_all.values[-2] < min_tr_count:
+                if min_count_mask.sum() == 0 or freq_mut is None or counts_all.values[-2] < min_tr_count:
                     continue
-                counts_all.loc[~min_count_mask] = 0
-            
-                # Make a mask to count all the non-mutant characters:
-                count_mask = np.zeros((tr_len, len(self.char_list)))
-                tr_char_idx = [self.char_dict[nt] for nt in tr_seq]
-                for seq_i, char_i in enumerate(tr_char_idx):
-                    count_mask[seq_i, char_i] = 1
-                counts_cor = (tr_muts_combi[species][anno]['PSCM'] * count_mask).sum(1)
-                # np.divide setting 0/0 to 1, i.e. no observation, no mutation
-                freq_mut = 1 - np.divide(counts_cor, counts_all, out=np.ones_like(counts_cor), where=counts_all!=0)
-                
+                freq_mut[~min_count_mask] = 0
+
                 # Find all positions that should be masked:
-                mask_idx = set((freq_mut.values >= min_mut_freq).nonzero()[0])
+                mask_idx = set((freq_mut >= min_mut_freq).nonzero()[0])
                 if len(mask_idx) == 0:
                     continue
                 # Make masked sequence:
+                tr_seq = tr_muts_combi[species][anno]['seq']
                 seq_masked = ['N' if seq_i in mask_idx else char for seq_i, char in enumerate(tr_seq)]
                 tr_muts_combi[species][anno]['seq_masked'] = ''.join(seq_masked)
 
