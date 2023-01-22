@@ -12,7 +12,8 @@ class STATS_collection:
     This class is used to collect statistics from the
     alignment results.
     '''
-    def __init__(self, dir_dict, tRNA_data, sample_df, common_seqs=None, ignore_common_count=False, check_exists=True):
+    def __init__(self, dir_dict, tRNA_data, sample_df, common_seqs=None, \
+                 ignore_common_count=False, check_exists=True, overwrite_dir=False):
         self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'align_score', 'unique_annotation', 'tRNA_annotation_len', 'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', '5p_cover', '3p_cover', '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', 'count']
         self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', '5p_cover', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', 'count']
 
@@ -40,25 +41,10 @@ class STATS_collection:
                                     'But common sequences are not specified. Either specify common sequences '
                                     'or explicitly set ignore_common_count=True'.format(row['sample_name_unique'], common_obs_fn))
 
-    def __load_commen_seqs(self):
-        # Make name to sequence dictionary for common sequences.
-        # We can only allow one species if using common sequences.
-        # Multiple species would require running the alignment on common sequences
-        # several times, defeating the purpose, but also making the code much
-        # more complicated.
-        sp_set = set(self.sample_df['species'].values)
-        if len(sp_set) > 1:
-            raise Exception('Only one species allowed in sample sheet when using common sequences.')
-        self.common_seqs_sp = list(sp_set)[0]
+        # Make output folder:
+        self.__make_dir(overwrite=overwrite_dir)
 
-        print('Using common sequences...')
-        assert(self.common_seqs_fnam[-4:] == '.bz2')
-        with bz2.open(self.common_seqs_fnam, "rt") as input_fh:
-            for ridx, record in enumerate(SeqIO.parse(input_fh, "fasta")):
-                assert(ridx == int(record.id))
-                self.common_seqs_info[record.id] = str(record.seq)
-
-    def make_dir(self, overwrite=True):
+    def __make_dir(self, overwrite):
         # Create folder for files:
         self.stats_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['stats_dir'])
         try:
@@ -69,7 +55,6 @@ class STATS_collection:
                 os.mkdir(self.stats_dir_abs)
             else:
                 print('Using existing folder because overwrite set to false: {}'.format(self.stats_dir_abs))
-        return(self.stats_dir_abs)
 
     def run_parallel(self, n_jobs=4, verbose=True, load_previous=False):
         if load_previous:
@@ -99,7 +84,25 @@ class STATS_collection:
         self.__concat_stats(results)
         return(self.concat_df)
     '''
-    
+
+    def __load_commen_seqs(self):
+        # Make name to sequence dictionary for common sequences.
+        # We can only allow one species if using common sequences.
+        # Multiple species would require running the alignment on common sequences
+        # several times, defeating the purpose, but also making the code much
+        # more complicated.
+        sp_set = set(self.sample_df['species'].values)
+        if len(sp_set) > 1:
+            raise Exception('Only one species allowed in sample sheet when using common sequences.')
+        self.common_seqs_sp = list(sp_set)[0]
+
+        print('Using common sequences...')
+        assert(self.common_seqs_fnam[-4:] == '.bz2')
+        with bz2.open(self.common_seqs_fnam, "rt") as input_fh:
+            for ridx, record in enumerate(SeqIO.parse(input_fh, "fasta")):
+                assert(ridx == int(record.id))
+                self.common_seqs_info[record.id] = str(record.seq)
+
     def __collect_stats(self, index, row):
         if self.verbose:
             print('  {}'.format(row['sample_name_unique']), end='')

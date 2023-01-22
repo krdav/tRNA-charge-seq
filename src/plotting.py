@@ -34,7 +34,8 @@ class TRNA_plot:
     from the tRNAseq data such as charge per codon,
     read per million (RPM) etc.
     '''
-    def __init__(self, dir_dict, sample_df=None, stats_fnam=None, pull_default=False):
+    def __init__(self, dir_dict, sample_df=None, stats_fnam=None, \
+                 pull_default=False, overwrite_dir=False):
         # Input:
         self.dir_dict = dir_dict
         self.charge_df = None
@@ -104,9 +105,11 @@ class TRNA_plot:
             else:
                 aa_letters.append(ctab_cyto[codon])
         self.all_stats['AA_letter'] = aa_letters
-                
 
-    def make_dir(self, overwrite=True):
+        # Make output folder:
+        self.__make_dir(overwrite_dir)
+
+    def __make_dir(self, overwrite):
         # Create folder for files:
         self.plotting_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['plotting_dir'])
         try:
@@ -117,7 +120,6 @@ class TRNA_plot:
                 os.mkdir(self.plotting_dir_abs)
             else:
                 print('Folder exists and overwrite set to false... Doing nothing.')
-        return(self.plotting_dir_abs)
 
     def get_charge_df(self):
         # Filter and group to only extract rows

@@ -25,7 +25,9 @@ class SWIPE_align:
     Because no heuristics are used, the results are guaranteed
     to contain the best alignment, as defined by the alignment score.
     '''
-    def __init__(self, dir_dict, tRNA_database, sample_df, score_mat, gap_penalty=6, extension_penalty=1, min_score_align=20, common_seqs=None):
+    def __init__(self, dir_dict, tRNA_database, sample_df, score_mat, \
+                 gap_penalty=6, extension_penalty=1, min_score_align=20, \
+                 common_seqs=None, overwrite_dir=False):
         # Swipe command template: 
         self.swipe_cmd_tmp = 'swipe\t--query\tINPUT_FILE\t--db\tDATABASE_FILE\t--out\tOUTPUT_FILE\t--symtype\t1\t--outfmt\t7\t--num_alignments\t3\t--num_descriptions\t3\t--evalue\t0.000000001\t--num_threads\t12\t--strand\t1\t--matrix\tSCORE_MATRIX\t-G\tGAP_PENALTY\t-E\tEXTENSION_PENALTY'
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('SCORE_MATRIX', score_mat)
@@ -68,7 +70,10 @@ class SWIPE_align:
                     self.common_seqs_dict[seq] = ridx
             self.Ncommon = len(self.common_seqs_dict)
 
-    def make_dir(self, overwrite=True):
+        # Make output folder:
+        self.__make_dir(overwrite_dir)
+
+    def __make_dir(self, overwrite):
         # Create folder for files:
         self.align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
         try:
@@ -79,7 +84,6 @@ class SWIPE_align:
                 os.mkdir(self.align_dir_abs)
             else:
                 print('Using existing folder because overwrite set to false: {}'.format(self.align_dir_abs))
-        return(self.align_dir_abs)
 
     def run_parallel(self, n_jobs=4, overwrite=True, verbose=True, load_previous=False):
         self.SWIPE_overwrite = overwrite

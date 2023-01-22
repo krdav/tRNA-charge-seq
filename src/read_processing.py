@@ -13,7 +13,8 @@ class AR_merge:
     '''
     This class is used to merge the paired end reads using AdapterRomoval.
     '''
-    def __init__(self, dir_dict, inp_file_df, MIN_READ_LEN, AR_threads=4):
+    def __init__(self, dir_dict, inp_file_df, MIN_READ_LEN, \
+                 AR_threads=4, overwrite_dir=False):
         # Input:
         self.inp_file_df, self.MIN_READ_LEN = inp_file_df, MIN_READ_LEN
         self.dir_dict = dir_dict
@@ -31,7 +32,10 @@ class AR_merge:
             assert(os.path.exists(fnam_mate1))
             assert(os.path.exists(fnam_mate2))
 
-    def make_dir(self, overwrite=True):
+        # Make output folder:
+        self.__make_dir(overwrite_dir)
+
+    def __make_dir(self, overwrite=True):
         # Create folder for files:
         self.AdapterRemoval_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['AdapterRemoval_dir'])
         try:
@@ -42,7 +46,6 @@ class AR_merge:
                 os.mkdir(self.AdapterRemoval_dir_abs)
             else:
                 print('Using existing folder because overwrite set to false: {}'.format(self.AdapterRemoval_dir_abs))
-        return(self.AdapterRemoval_dir_abs)
 
     def run_parallel(self, n_jobs=4, overwrite=True):
         self.AR_overwrite = overwrite
@@ -125,7 +128,7 @@ class BC_split:
     '''
     This class is used to split fastq files based on barcodes.
     '''
-    def __init__(self, dir_dict, sample_df, inp_file_df):
+    def __init__(self, dir_dict, sample_df, inp_file_df, overwrite_dir=False):
         # Input:
         self.sample_df, self.inp_file_df = sample_df, inp_file_df
         self.dir_dict = dir_dict
@@ -135,8 +138,11 @@ class BC_split:
             basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
             merged_fastq_fn = '{}/{}.collapsed.bz2'.format(self.AdapterRemoval_dir_abs, basename)
             assert(os.path.exists(merged_fastq_fn))
+        
+        # Make output folder:
+        self.__make_dir(overwrite_dir)
 
-    def make_dir(self, overwrite=True):
+    def __make_dir(self, overwrite):
         # Create folder for files:
         self.BC_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['BC_dir'])
         try:
@@ -147,7 +153,6 @@ class BC_split:
                 os.mkdir(self.BC_dir_abs)
             else:
                 print('Using existing folder because overwrite set to false: {}'.format(self.BC_dir_abs))
-        return(self.BC_dir_abs)
 
     def run_parallel(self, n_jobs=4, load_previous=False):
         # Must check that not too many file handles are opened at the same time:
@@ -518,7 +523,8 @@ class UMI_trim:
     is lower than the expected number of unique UMI.
     How much lower, is a usefull metric reported in the stats.
     '''
-    def __init__(self, dir_dict, sample_df, UMI_end={'T', 'C'}):
+    def __init__(self, dir_dict, sample_df, UMI_end={'T', 'C'}, \
+                 overwrite_dir=False):
         # Calculate the number of possible UMIs,
         # 9x random nt. (A/G/T/C) and one purine (A/G)
         self.n_bins = 4**9 * 2
@@ -537,7 +543,10 @@ class UMI_trim:
             mapped_fn = '{}/{}.fastq.bz2'.format(self.BC_dir_abs, row['sample_name_unique'])
             assert(os.path.exists(mapped_fn))
 
-    def make_dir(self, overwrite=True):
+        # Make output folder:
+        self.__make_dir(overwrite_dir)
+
+    def __make_dir(self, overwrite):
         # Create folder for files:
         self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
         try:
@@ -548,7 +557,6 @@ class UMI_trim:
                 os.mkdir(self.UMI_dir_abs)
             else:
                 print('Using existing folder because overwrite set to false: {}'.format(self.UMI_dir_abs))
-        return(self.UMI_dir_abs)
 
     def run_parallel(self, n_jobs=4, load_previous=False):
         if load_previous is False:
