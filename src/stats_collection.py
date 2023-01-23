@@ -125,7 +125,9 @@ class STATS_collection:
             # Use low_memory=False to avoid warnings about mixed dtypes
             # in column one because of readID can be both
             # a fastq header and a number (for common sequences).
-            stat_df = pd.read_csv(stats_fh, keep_default_na=False, low_memory=False)
+            #stat_df = pd.read_csv(stats_fh, keep_default_na=False, low_memory=False)
+            # readID
+            stat_df = pd.read_csv(stats_fh, keep_default_na=False, dtype={'readID': str})
 
         # Aggregate dataframe and write as CSV file:
         row_mask = (stat_df['3p_cover']) & (stat_df['3p_non-temp'] == '')
@@ -208,6 +210,7 @@ class STATS_collection:
                 print(csv_line, file=stats_fh)
 
         # Free memory from taken by "UMI_info":
+        UMI_info = None
         del UMI_info
         gc.collect()
 
