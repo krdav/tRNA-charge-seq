@@ -196,7 +196,8 @@ class TM_analysis:
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
         with bz2.open(stats_fnam, 'rt', encoding="utf-8") as stats_fh:
             sample_stats = pd.read_csv(stats_fh, keep_default_na=False, low_memory=False)
-        ID2anno = {rid: tan.split('@') for rid, tan, _3c in zip(sample_stats['readID'], sample_stats['tRNA_annotation'], sample_stats['3p_cover']) if _3c}
+        ID2anno = {rid: tan.split('@') for rid, tan, _3c in zip(sample_stats['readID'].values, sample_stats['tRNA_annotation'].values, sample_stats['3p_cover'].values) if _3c}
+        sample_stats = None
         del sample_stats
         gc.collect()
 
@@ -441,7 +442,7 @@ class TM_analysis:
                                     mito=False, gap_only=False, \
                                     min_count_show=100, \
                                     sample_pairs=None, sample_unique_pairs=None, \
-                                    tr_compare_list=None, \
+                                    tr_compare_inp=None, \
                                     anno_substring_compare=None,\
                                     sample_list_exl=None, bc_list_exl=None,
                                     freq_avg_weighted=True, \
@@ -495,7 +496,7 @@ class TM_analysis:
                 # Find the transcripts to compare:
                 if not anno_substring_compare is None:
                     tr_compare_list = [anno for anno in tr_muts_combi_s1[species] if anno_substring_compare in anno]
-                elif tr_compare_list is None:
+                elif tr_compare_inp is None:
                     # Sort annotations according to largest distance between samples:
                     topN_anno = self.__sort_freq_diff(tr_muts_combi_s1, tr_muts_combi_s2, species, min_count_show, gap_only, mito, topN_select)
                     tr_compare_list = topN_anno[:topN]
@@ -510,10 +511,14 @@ class TM_analysis:
                 for anno in tr_compare_list:
                     if not anno in tr_muts_combi_s1[species] or not anno in tr_muts_combi_s2[species]:
                         continue
-                    freq_mut_s1 = self.__get_mut_freq_filted(tr_muts_combi_s1, species, anno, min_count_show, gap_only)
-                    freq_mut_s2 = self.__get_mut_freq_filted(tr_muts_combi_s2, species, anno, min_count_show, gap_only)
+                    freq_mut_s1, min_count_mask_s1 = self.__get_mut_freq_filted(tr_muts_combi_s1, species, anno, min_count_show, gap_only)
+                    freq_mut_s2, min_count_mask_s2 = self.__get_mut_freq_filted(tr_muts_combi_s2, species, anno, min_count_show, gap_only)
                     if freq_mut_s1 is None or freq_mut_s2 is None:
                         continue
+                    # Positional coverage has to be fulfilled in both samples:
+                    min_count_mask_s12 = min_count_mask_s1 & min_count_mask_s2
+                    freq_mut_s1[~min_count_mask_s12] = 0
+                    freq_mut_s2[~min_count_mask_s12] = 0
 
                     # Add an extra transcript to the mutation matrix:
                     if anno_idx > 0:
@@ -567,10 +572,14 @@ class TM_analysis:
             # If mito is specified, skip non-mito annotations:
             if mito and 'mito' not in anno:
                 continue
-            freq_mut_s1 = self.__get_mut_freq_filted(tr_muts_combi_s1, species, anno, min_count_show, gap_only)
-            freq_mut_s2 = self.__get_mut_freq_filted(tr_muts_combi_s2, species, anno, min_count_show, gap_only)
+            freq_mut_s1, min_count_mask_s1 = self.__get_mut_freq_filted(tr_muts_combi_s1, species, anno, min_count_show, gap_only)
+            freq_mut_s2, min_count_mask_s2 = self.__get_mut_freq_filted(tr_muts_combi_s2, species, anno, min_count_show, gap_only)
             if freq_mut_s1 is None or freq_mut_s2 is None:
                 continue
+            # Positional coverage has to be fulfilled in both samples:
+            min_count_mask_s12 = min_count_mask_s1 & min_count_mask_s2
+            freq_mut_s1[~min_count_mask_s12] = 0
+            freq_mut_s2[~min_count_mask_s12] = 0
 
             # Find the requested distance between samples:
             if topN_select == 'max_diff':
@@ -596,9 +605,9 @@ class TM_analysis:
         counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1)
         min_count_mask = counts_all >= min_count_show
         if min_count_mask.sum() == 0:
-            return(None)
+            return(None, None)
         freq_mut[~min_count_mask] = 0
-        return(freq_mut)
+        return(freq_mut, min_count_mask)
 
     def plot_transcript_mut(self, topN=50, species='human', plot_name='tr-mut_matrix', \
                             png_dpi=False, no_plot_return=False, mito=False, gap_only=False, \
