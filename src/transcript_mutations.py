@@ -499,9 +499,17 @@ class TM_analysis:
                 # Find the transcripts to compare:
                 if not anno_substring_compare is None:
                     tr_compare_list = [anno for anno in tr_muts_combi_s1[species] if anno_substring_compare in anno]
+                    # Sort list of annotations:
+                    tr_compare_list = self.__sort_freq_diff(tr_muts_combi_s1, \
+                                                            tr_muts_combi_s2, \
+                                                            species, min_count_show, \
+                                                            gap_only, mito, topN_select, \
+                                                            list_to_sort=tr_compare_list)
                 elif tr_compare_inp is None:
                     # Sort annotations according to largest distance between samples:
-                    topN_anno = self.__sort_freq_diff(tr_muts_combi_s1, tr_muts_combi_s2, species, min_count_show, gap_only, mito, topN_select)
+                    topN_anno = self.__sort_freq_diff(tr_muts_combi_s1, tr_muts_combi_s2, \
+                                                      species, min_count_show, gap_only, \
+                                                      mito, topN_select)
                     tr_compare_list = topN_anno[:topN]
 
                 # Get data for plotting.
@@ -567,10 +575,18 @@ class TM_analysis:
                 if no_plot_return:
                     plt.close(fig)
 
-    def __sort_freq_diff(self, tr_muts_combi_s1, tr_muts_combi_s2, species, min_count_show, gap_only, mito, topN_select):
+    def __sort_freq_diff(self, tr_muts_combi_s1, tr_muts_combi_s2, species, \
+                         min_count_show, gap_only, mito, topN_select, \
+                         list_to_sort=None):
+        # Default, sort all annotations:
+        if list_to_sort is None:
+            anno_loop_list = tr_muts_combi_s1[species].keys()
+        else:
+            anno_loop_list = list_to_sort
+
         topN_anno = list()
-        for anno in tr_muts_combi_s1[species]:
-            if not anno in tr_muts_combi_s2[species]:
+        for anno in anno_loop_list:
+            if not anno in tr_muts_combi_s1[species] and not anno in tr_muts_combi_s2[species]:
                 continue
             # If mito is specified, skip non-mito annotations:
             if mito and 'mito' not in anno:
