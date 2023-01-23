@@ -208,8 +208,63 @@ class TRNA_plot:
             self.get_charge_df()
         self.charge_df.to_csv(fnam_abs, header=True, index=False)
 
-    def plot_Ecoli_ctr(self, plot_name='Ecoli_control', sample_list=None):
-        pass
+    def plot_Ecoli_ctr(self, plot_name='ecoli-ctr_charge_plot', sample_list=None,
+                       charge_plot=False, min_obs=1, \
+                       sample_list_exl=None, bc_list_exl=None):
+
+        if charge_plot:
+            y_axis = 'charge'
+        else:
+            y_axis = 'RPM'
+
+        if sample_list is None:
+            sample_list = list(set(self.sample_df['sample_name_unique']))
+
+        # Sample rows selected:
+        charge_df_type = self.charge_filt['tr'].copy()
+        sample_mask = np.array([False]*len(charge_df_type))
+        for unam in sample_list:
+            sample_mask |= (charge_df_type['sample_name_unique'] == unam)
+
+        # Exclude unique samples or barcodes:
+        if not sample_list_exl is None:
+            for unam in sample_list_exl:
+                sample_mask &= (charge_df_type['sample_name_unique'] != unam)
+        if not bc_list_exl is None:
+            for bc in bc_list_exl:
+                sample_mask &= (charge_df_type['barcode'] != bc)
+
+        # Only take rows with Ecoli controls:
+        sample_mask &= charge_df_type['Ecoli_ctr'] & (charge_df_type['count'] >= min_obs)
+        charge_sample = charge_df_type[sample_mask].copy()
+        
+        # Different settings for different plot types:
+        Ngrp = len(set(charge_sample['sample_name_unique']))
+        x_list = sorted(set(charge_sample['sample_name_unique'].values), key=str.casefold)
+
+        # Make the plot:
+        fig, ax = plt.subplots(1, 1, figsize=(0.6*Ngrp, 6))
+        g1 = sns.barplot(ax=ax, x='sample_name_unique', y=y_axis, order=x_list, hue='tRNA_anno_short', \
+                         data=charge_sample, capsize=.1, errwidth=2, \
+                         edgecolor='black', linewidth=2, alpha=0.85)
+
+        # Set axis/title text:
+        g1.set_title('E.coli control samples')
+        g1.set_xticklabels(g1.get_xticklabels(), rotation=90)
+        g1.grid(True, axis='y')
+        g1.set_xlabel('');
+        
+        if charge_plot is True:
+            g1.set_ylabel('Charge (%)');
+            g1.set(ylim=[0, 100])
+        else:
+            g1.set_ylabel('Abundance (RPM)');
+
+        # Write to PDF file:
+        plot_fnam = '{}/{}.pdf'.format(self.plotting_dir_abs, plot_name)
+        fig.tight_layout()
+        fig.savefig(plot_fnam, bbox_inches='tight')
+        plt.close(fig)
 
     def plot_abundance(self, plot_type='aa', group=False, charge_plot=False, \
         plot_name='abundance_plot_aa', min_obs=100, sample_list=None, verbose=True, \
@@ -218,11 +273,11 @@ class TRNA_plot:
             self.get_charge_df()
 
         if plot_type == 'aa':
-            charge_df_type = self.charge_filt['aa']
+            charge_df_type = self.charge_filt['aa'].copy()
         elif plot_type == 'codon':
-            charge_df_type = self.charge_filt['codon']
+            charge_df_type = self.charge_filt['codon'].copy()
         elif plot_type == 'transcript':
-            charge_df_type = self.charge_filt['tr']
+            charge_df_type = self.charge_filt['tr'].copy()
         else:
             raise Exception('Unknown plot type specified: {}\nValid strings are either either "aa", "codon" or "transcript".'.format(plot_type))
         
@@ -372,13 +427,13 @@ class TRNA_plot:
             self.get_charge_df()
 
         if plot_type == 'aa':
-            charge_df_type = self.charge_filt['aa']
+            charge_df_type = self.charge_filt['aa'].copy()
             merge_on = ['amino_acid', 'mito_codon', 'Ecoli_ctr']
         elif plot_type == 'codon':
-            charge_df_type = self.charge_filt['codon']
+            charge_df_type = self.charge_filt['codon'].copy()
             merge_on = ['AA_codon', 'mito_codon', 'Ecoli_ctr']
         elif plot_type == 'transcript':
-            charge_df_type = self.charge_filt['tr']
+            charge_df_type = self.charge_filt['tr'].copy()
             merge_on = ['tRNA_annotation', 'mito_codon', 'Ecoli_ctr']
         else:
             raise Exception('Unknown plot type specified: {}\nValid strings are either either "aa", "codon" or "transcript".'.format(plot_type))
