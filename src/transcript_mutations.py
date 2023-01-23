@@ -180,17 +180,16 @@ class TM_analysis:
 
         # Write deduplicated sequences to temporary file.
         # This is to save memory:
-        dedup_out = 'tmp_{}.txt'.format(row['sample_name_unique'])
-        with open(dedup_out, 'w') as fh:
+        dedup_tmp = '{}/tmp_{}.txt'.format(self.TM_dir_abs, row['sample_name_unique'])
+        with open(dedup_tmp, 'w') as fh_dedup_out:
             for seq in dedup_seq_count:
                 print('{}\t{}\t{}'.format(seq, \
                                           dedup_seq_count[seq]['id'], \
                                           dedup_seq_count[seq]['count']), \
-                      file=fh)
-        
-
-
-
+                      file=fh_dedup_out)
+        dedup_seq_count = None
+        del dedup_seq_count
+        gc.collect()
 
         # Read the stats file to get the old alignment annotations:
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
@@ -201,72 +200,76 @@ class TM_analysis:
         del sample_stats
         gc.collect()
 
-        for seq in dedup_seq_count:
-            # Check if common sequence, then readID has changed:
-            if not self.common_seqs_fnam is None and seq in self.common_seqs_dict:
-                readID = str(self.common_seqs_dict[seq])
-            else:
-                readID = dedup_seq_count[seq]['id']
+        with open(dedup_tmp, 'r') as fh_dedup_in:
+            for line in fh_dedup_in:
+                seq, seq_id, seq_count = line.split('\t')
+                seq_count = int(seq_count)
 
-            # Get list of annotations:
-            if readID in ID2anno:
-                anno_list = ID2anno[readID]
-            else:
-                # Skip unaligned reads:
-                continue
-            # Skip if multiple annotations found but unique requested:
-            if self.unique_anno and len(anno_list) > 1:
-                continue
+                # Check if common sequence, then readID has changed:
+                if not self.common_seqs_fnam is None and seq in self.common_seqs_dict:
+                    readID = str(self.common_seqs_dict[seq])
+                else:
+                    readID = seq_id
 
-            for anno in anno_list:
-                # Generate alignments:
-                target = tr_muts_sp[species][anno]['seq']
-                alignments = aligner.align(target, seq)
-                # If multiple alignments with the same score these should be weighted
-                # so one read contributes with one observation:
-                weight = 1.0 / len(alignments) * dedup_seq_count[seq]['count']
-                for alignment in alignments:
-                    # Extract the alignment coordinates:
-                    t_cor, q_cor = alignment.aligned
-                    if (t_cor[-1, -1] + 1) < tr_muts_sp[species][anno]['seq_len']:
-                        # Sometimes the change in alignment reward/penalties between 
-                        # SWIPE and what is specified for transcript mutation analysis
-                        # makes the alignment shift. This is particularly the case
-                        # when a large gap is opened in the middle of the read and
-                        # SWIPE aligns the right part to the 3p end of the reference
-                        # and the above alignment aligns the left part to some other
-                        # place in the reference.
-                        # These are very rare events (probably less the 1/100,000),
-                        # so we simply skip them:
-                        continue
-                    # Initiate the character observation matrix.
-                    # Note that the number of observations is determined by the
-                    # weight variable, hence the dtype needs more than int8:
-                    count_mat = np.zeros((len(target), len(self.char_list)), dtype=np.uint32)
-                    # Find gaps:
-                    for i in range(1, len(t_cor)):
-                        for j in range(t_cor[i][0] - t_cor[i-1][1]):
-                            count_mat[t_cor[i-1][1] + j, self.char_dict['-']] = weight
+                # Get list of annotations:
+                if readID in ID2anno:
+                    anno_list = ID2anno[readID]
+                else:
+                    # Skip unaligned reads:
+                    continue
+                # Skip if multiple annotations found but unique requested:
+                if self.unique_anno and len(anno_list) > 1:
+                    continue
 
-                    # Find mismatches/mutations:
-                    mut_idx = list()
-                    for tran, qran in zip(t_cor, q_cor):
-                        for ti, qi in zip(range(*tran), range(*qran)):
-                            count_mat[ti, self.char_dict[seq[qi]]] = weight
-                    tr_muts_sp[species][anno]['PSCM'] += count_mat
+                for anno in anno_list:
+                    # Generate alignments:
+                    target = tr_muts_sp[species][anno]['seq']
+                    alignments = aligner.align(target, seq)
+                    # If multiple alignments with the same score these should be weighted
+                    # so one read contributes with one observation:
+                    weight = 1.0 / len(alignments) * seq_count
+                    for alignment in alignments:
+                        # Extract the alignment coordinates:
+                        t_cor, q_cor = alignment.aligned
+                        if (t_cor[-1, -1] + 1) < tr_muts_sp[species][anno]['seq_len']:
+                            # Sometimes the change in alignment reward/penalties between 
+                            # SWIPE and what is specified for transcript mutation analysis
+                            # makes the alignment shift. This is particularly the case
+                            # when a large gap is opened in the middle of the read and
+                            # SWIPE aligns the right part to the 3p end of the reference
+                            # and the above alignment aligns the left part to some other
+                            # place in the reference.
+                            # These are very rare events (probably less the 1/100,000),
+                            # so we simply skip them:
+                            continue
+                        # Initiate the character observation matrix.
+                        # Note that the number of observations is determined by the
+                        # weight variable, hence the dtype needs more than int8:
+                        count_mat = np.zeros((len(target), len(self.char_list)), dtype=np.uint32)
+                        # Find gaps:
+                        for i in range(1, len(t_cor)):
+                            for j in range(t_cor[i][0] - t_cor[i-1][1]):
+                                count_mat[t_cor[i-1][1] + j, self.char_dict['-']] = weight
 
-        # Convert the count matrix to dataframe
-        # calculate mutation/gap frequencies and return:
-        for anno in tr_muts_sp[species]:
-            tr_muts_sp[species][anno]['PSCM'] = pd.DataFrame(tr_muts_sp[species][anno]['PSCM'], columns=self.char_list)
-            if tr_muts_sp[species][anno]['PSCM'].max().max() > 0:
-                # Mutation frequencies:
-                freq_mut = self.__calc_mut_freq(tr_muts_sp, anno, species, gap_only=False, min_count_show=0)
-                tr_muts_sp[species][anno]['mut_freq'] = freq_mut
-                # Gap frequencies:
-                freq_gap = self.__calc_mut_freq(tr_muts_sp, anno, species, gap_only=True, min_count_show=0)
-                tr_muts_sp[species][anno]['gap_freq'] = freq_gap
+                        # Find mismatches/mutations:
+                        mut_idx = list()
+                        for tran, qran in zip(t_cor, q_cor):
+                            for ti, qi in zip(range(*tran), range(*qran)):
+                                count_mat[ti, self.char_dict[seq[qi]]] = weight
+                        tr_muts_sp[species][anno]['PSCM'] += count_mat
 
+            # Convert the count matrix to dataframe
+            # calculate mutation/gap frequencies and return:
+            for anno in tr_muts_sp[species]:
+                tr_muts_sp[species][anno]['PSCM'] = pd.DataFrame(tr_muts_sp[species][anno]['PSCM'], columns=self.char_list)
+                if tr_muts_sp[species][anno]['PSCM'].max().max() > 0:
+                    # Mutation frequencies:
+                    freq_mut = self.__calc_mut_freq(tr_muts_sp, anno, species, gap_only=False, min_count_show=0)
+                    tr_muts_sp[species][anno]['mut_freq'] = freq_mut
+                    # Gap frequencies:
+                    freq_gap = self.__calc_mut_freq(tr_muts_sp, anno, species, gap_only=True, min_count_show=0)
+                    tr_muts_sp[species][anno]['gap_freq'] = freq_gap
+        os.remove(dedup_tmp)
         return((row['sample_name_unique'], tr_muts_sp))
  
     def __combine_tr_muts(self, sample_list, freq_avg_weighted=True):
