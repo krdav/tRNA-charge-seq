@@ -178,6 +178,20 @@ class TM_analysis:
                     # One id is enough, the other will have the same alignment:
                     dedup_seq_count[seq]['id'] = UMIread.id
 
+        # Write deduplicated sequences to temporary file.
+        # This is to save memory:
+        dedup_out = 'tmp_{}.txt'.format(row['sample_name_unique'])
+        with open(dedup_out, 'w') as fh:
+            for seq in dedup_seq_count:
+                print('{}\t{}\t{}'.format(seq, \
+                                          dedup_seq_count[seq]['id'], \
+                                          dedup_seq_count[seq]['count']), \
+                      file=fh)
+        
+
+
+
+
         # Read the stats file to get the old alignment annotations:
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
         with bz2.open(stats_fnam, 'rt', encoding="utf-8") as stats_fh:
