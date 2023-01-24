@@ -31,6 +31,17 @@ class TM_analysis:
     def __init__(self, dir_dict, sample_df, tRNA_database, \
                  pull_default=False, common_seqs=None, ignore_common_count=False, \
                  overwrite_dir=False):
+        self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', \
+                                 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', \
+                                 'align_score', 'unique_annotation', 'tRNA_annotation_len', \
+                                 'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', \
+                                 'codon', 'anticodon', 'amino_acid', '5p_cover', '3p_cover', \
+                                 '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', 'count']
+        self.stats_csv_header_type = [str, bool, str, str, int, str, str, int, str, int, \
+                                      int, int, str, str, str, str, str, bool, bool, \
+                                      str, str, str, str, int]
+        self.stats_csv_header_td = {nam:tp for nam, tp in zip(self.stats_csv_header, self.stats_csv_header_type)}
+
         # Input:
         self.sample_df, self.tRNA_database = sample_df, tRNA_database
         self.dir_dict = dir_dict
@@ -194,7 +205,7 @@ class TM_analysis:
         # Read the stats file to get the old alignment annotations:
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
         with bz2.open(stats_fnam, 'rt', encoding="utf-8") as stats_fh:
-            sample_stats = pd.read_csv(stats_fh, keep_default_na=False, low_memory=False)
+            sample_stats = pd.read_csv(stats_fh, keep_default_na=False, dtype=self.stats_csv_header_td)
         ID2anno = {rid: tan.split('@') for rid, tan, _3c in zip(sample_stats['readID'].values, sample_stats['tRNA_annotation'].values, sample_stats['3p_cover'].values) if _3c}
         sample_stats = None
         del sample_stats

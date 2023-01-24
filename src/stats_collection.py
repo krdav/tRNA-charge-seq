@@ -14,8 +14,23 @@ class STATS_collection:
     '''
     def __init__(self, dir_dict, tRNA_data, sample_df, common_seqs=None, \
                  ignore_common_count=False, check_exists=True, overwrite_dir=False):
-        self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'align_score', 'unique_annotation', 'tRNA_annotation_len', 'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', '5p_cover', '3p_cover', '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', 'count']
-        self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', '5p_cover', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', 'count']
+        self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', \
+                                 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', \
+                                 'align_score', 'unique_annotation', 'tRNA_annotation_len', \
+                                 'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', \
+                                 'codon', 'anticodon', 'amino_acid', '5p_cover', '3p_cover', \
+                                 '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', 'count']
+        self.stats_csv_header_type = [str, bool, str, str, int, str, str, int, str, int, \
+                                      int, int, str, str, str, str, str, bool, bool, \
+                                      str, str, str, str, int]
+        self.stats_csv_header_td = {nam:tp for nam, tp in zip(self.stats_csv_header, self.stats_csv_header_type)}
+        self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', \
+                               'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', \
+                               '5p_cover', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', \
+                               'count']
+        self.stats_agg_cols_type = [str, str, int, str, str, int, bool, \
+                                    bool, str, str, str, str, int]
+        self.stats_agg_cols_td = {nam:tp for nam, tp in zip(self.stats_agg_cols, self.stats_agg_cols_type)}
 
         # Input:
         self.tRNA_data, self.sample_df = tRNA_data, sample_df
@@ -59,7 +74,7 @@ class STATS_collection:
     def run_parallel(self, n_jobs=4, verbose=True, load_previous=False):
         if load_previous:
             stats_agg_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
-            self.concat_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, low_memory=False)
+            self.concat_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, dtype=self.stats_agg_cols_td)
             print('Loaded results from previous run... Not running stats collection.')
             return(self.concat_df)
         elif not self.common_seqs_fnam is None:
@@ -122,12 +137,7 @@ class STATS_collection:
         with bz2.open(stats_fnam, 'rt') as stats_fh:
             # Use "keep_default_na=False" to read an empty string
             # as an empty string and not as NaN.
-            # Use low_memory=False to avoid warnings about mixed dtypes
-            # in column one because of readID can be both
-            # a fastq header and a number (for common sequences).
-            #stat_df = pd.read_csv(stats_fh, keep_default_na=False, low_memory=False)
-            # readID
-            stat_df = pd.read_csv(stats_fh, keep_default_na=False, dtype={'readID': str})
+            stat_df = pd.read_csv(stats_fh, keep_default_na=False, dtype=self.stats_csv_header_td)
 
         # Aggregate dataframe and write as CSV file:
         row_mask = (stat_df['3p_cover']) & (stat_df['3p_non-temp'] == '')
@@ -299,6 +309,6 @@ class STATS_collection:
                         print(line, file=fh_out, end='')
 
         # Read and store as dataframe:
-        self.concat_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, low_memory=False)
+        self.concat_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, dtype=self.stats_agg_cols_td)
 
 

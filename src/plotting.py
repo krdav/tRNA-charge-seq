@@ -36,6 +36,24 @@ class TRNA_plot:
     '''
     def __init__(self, dir_dict, sample_df=None, stats_fnam=None, \
                  pull_default=False, overwrite_dir=False):
+        self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', \
+                                 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', \
+                                 'align_score', 'unique_annotation', 'tRNA_annotation_len', \
+                                 'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', \
+                                 'codon', 'anticodon', 'amino_acid', '5p_cover', '3p_cover', \
+                                 '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', 'count']
+        self.stats_csv_header_type = [str, bool, str, str, int, str, str, int, str, int, \
+                                      int, int, str, str, str, str, str, bool, bool, \
+                                      str, str, str, str, int]
+        self.stats_csv_header_td = {nam:tp for nam, tp in zip(self.stats_csv_header, self.stats_csv_header_type)}
+        self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', \
+                               'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', \
+                               '5p_cover', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', \
+                               'count']
+        self.stats_agg_cols_type = [str, str, int, str, str, int, bool, \
+                                    bool, str, str, str, str, int]
+        self.stats_agg_cols_td = {nam:tp for nam, tp in zip(self.stats_agg_cols, self.stats_agg_cols_type)}
+
         # Input:
         self.dir_dict = dir_dict
         self.charge_df = None
@@ -58,7 +76,7 @@ class TRNA_plot:
         # Load aggregated CSV data:
         if stats_fnam is None:
             stats_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
-        self.all_stats = pd.read_csv(stats_fnam, keep_default_na=False)
+        self.all_stats = pd.read_csv(stats_fnam, keep_default_na=False, dtype=self.stats_agg_cols_td)
         # Get rid of 1/2 in mito Leu amino acid name:
         self.all_stats['amino_acid'] = [AA[:-1] if AA[-1]=='1' or AA[-1]=='2' else AA for AA in self.all_stats['amino_acid'].values]
         # Add amino acid - codon string:
@@ -594,7 +612,7 @@ class TRNA_plot:
             print('  {}'.format(row['sample_name_unique']), end='')
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
         with bz2.open(stats_fnam, 'rt', encoding="utf-8") as stats_fh:
-            sample_stats = pd.read_csv(stats_fh, keep_default_na=False, low_memory=False)
+            sample_stats = pd.read_csv(stats_fh, keep_default_na=False, dtype=self.stats_csv_header_td)
 
         col_sele = row['col_sele']
         if row['seq_len'] is None:
@@ -642,7 +660,7 @@ class TRNA_plot:
             print('  {}'.format(row['sample_name_unique']), end='')
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
         with bz2.open(stats_fnam, 'rt', encoding="utf-8") as stats_fh:
-            sample_stats = pd.read_csv(stats_fh, keep_default_na=False, low_memory=False)
+            sample_stats = pd.read_csv(stats_fh, keep_default_na=False, dtype=self.stats_csv_header_td)
         try:
             UMI_mask = sample_stats['5p_UMI'] != ''
             with warnings.catch_warnings(): # ignoring a warning about array assignment
@@ -825,7 +843,7 @@ class TRNA_plot:
         # Read data and add necessary columns:
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
         with bz2.open(stats_fnam, 'rt', encoding="utf-8") as stats_fh:
-            sample_stats = pd.read_csv(stats_fh, keep_default_na=False, low_memory=False)
+            sample_stats = pd.read_csv(stats_fh, keep_default_na=False, dtype=self.stats_csv_header_td)
         # Create single codon filter, to filter out sequences that map to
         # tRNA sequences with different codon/anticodon:
         single_codon = list()
