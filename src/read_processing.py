@@ -128,10 +128,12 @@ class BC_split:
     '''
     This class is used to split fastq files based on barcodes.
     '''
-    def __init__(self, dir_dict, sample_df, inp_file_df, overwrite_dir=False):
+    def __init__(self, dir_dict, sample_df, inp_file_df, overwrite_dir=False, \
+                 max_dist=1):
         # Input:
         self.sample_df, self.inp_file_df = sample_df, inp_file_df
         self.dir_dict = dir_dict
+        self.max_dist = max_dit # allowed nt. mismatches between barcode and read
         # Check files exists before starting:
         self.AdapterRemoval_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['AdapterRemoval_dir'])
         for _, row in self.inp_file_df.iterrows(): # Pull out each merged fastq file
@@ -212,7 +214,8 @@ class BC_split:
                 # Search for barcodes and write to barcode specific file:
                 found = False
                 for bc, sample_name, fh in bc_fh:
-                    if all(l1==l2 for l1, l2 in zip(seq[-len(bc):], bc) if l2 != 'N'):
+                    # if all(l1==l2 for l1, l2 in zip(seq[-len(bc):], bc) if l2 != 'N'):
+                    if jellyfish.hamming_distance(seq[-len(bc):], bc) <= self.max_dist:
                         found = True
                         # Add adapter sequence to title:
                         title = title + ':' + seq[-len(bc):]
