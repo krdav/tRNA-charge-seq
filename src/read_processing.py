@@ -133,7 +133,7 @@ class BC_split:
         # Input:
         self.sample_df, self.inp_file_df = sample_df, inp_file_df
         self.dir_dict = dir_dict
-        self.max_dist = max_dit # allowed nt. mismatches between barcode and read
+        self.max_dist = max_dist # allowed nt. mismatches between barcode and read
         # Check files exists before starting:
         self.AdapterRemoval_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['AdapterRemoval_dir'])
         for _, row in self.inp_file_df.iterrows(): # Pull out each merged fastq file
