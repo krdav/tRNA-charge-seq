@@ -447,8 +447,62 @@ class TM_analysis:
         else:
             return((obs_mat_df, fig, sorted_anno))
 
+    def write_transcript_mut(self, sample_list, species='human', \
+                             csv_name='tr-mut_matrix', \
+                             gap_only=False, \
+                             mask_min_count=0, \
+                             right_align=True):
+        # Write both mutation frequencies and positional counts:
+        muts_csv_fnam_abs = '{}/{}_frequencies.csv'.format(self.TM_dir_abs, csv_name)
+        counts_csv_fnam_abs = '{}/{}_counts.csv'.format(self.TM_dir_abs, csv_name)
+        muts_fh = open(muts_csv_fnam_abs, 'w')
+        counts_fh = open(counts_csv_fnam_abs, 'w')
+        # Sequence positions are indexed from 1:
+        seq_pos_str = ','.join(['P'+str(i+1) for i in range(self.longest_tRNA)])
+        print('sample_name_unique,tRNA_annotation,tRNA_len,{}'.format(seq_pos_str), file=muts_fh)
+        print('sample_name_unique,tRNA_annotation,tRNA_len,{}'.format(seq_pos_str), file=counts_fh)
 
+        # Keep track of the samples requested
+        # to warn if any was not found:
+        sample_list_cp = copy.deepcopy(sample_list)
+        for unam, sp_muts in self.tr_muts.items():
+            # Skip if sample name not requested:
+            if not unam in sample_list_cp:
+                continue
+            # Pop from sample list to track that all
+            # sample names have been found:
+            sample_list_cp.pop(sample_list_cp.index(unam))
+            for anno in sp_muts[species]:
+                freq_mut_print = np.zeros(self.longest_tRNA, dtype=float)
+                counts_all_print = np.zeros(self.longest_tRNA, dtype=int)
+                tRNA_len = sp_muts[species][anno]['seq_len']
+                if gap_only:
+                    freq_mut = sp_muts[species][anno]['gap_freq']
+                else:
+                    freq_mut = sp_muts[species][anno]['mut_freq']
 
+                # Enforce a minimum number of observations:
+                counts_all = sp_muts[species][anno]['PSCM'].sum(1)
+                min_count_mask = counts_all >= mask_min_count
+                if min_count_mask.sum() == 0:
+                    continue
+                freq_mut[~min_count_mask] = 0
+
+                # Left or right align the mutation frequencies
+                # compared to the longest tRNA:
+                if right_align:
+                    freq_mut_print[-len(freq_mut):] = freq_mut
+                    counts_all_print[-len(counts_all):] = counts_all
+                else:
+                    freq_mut_print[:len(freq_mut)] = freq_mut
+                    counts_all_print[:len(counts_all)] = counts_all
+
+                print('{},{},{},{}'.format(unam, anno, tRNA_len, ','.join(map(str, freq_mut_print))), file=muts_fh)
+                print('{},{},{},{}'.format(unam, anno, tRNA_len, ','.join(map(str, counts_all_print))), file=counts_fh)
+        muts_fh.close()
+        counts_fh.close()
+        if len(sample_list_cp) > 0:
+            print('Did not find all the samples requested: {}'.format(str(sample_list_cp)))
 
     def plot_transcript_mut_compare(self, species='human', \
                                     plot_name='tr-mut_matrix_comp', \
