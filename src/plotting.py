@@ -102,7 +102,8 @@ class TRNA_plot:
             sa = True
             anno_list = anno_str.split('@')
             for anno in anno_list:
-                if not anno.split('-')[1] == amino_acid:
+                # Use "in" instead of "==" to accommodate Leu1/2 and Ser1/2:
+                if not amino_acid in anno.split('-')[1]:
                     sa = False
             single_aa.append(sa)
         self.all_stats['single_aa'] = single_aa
