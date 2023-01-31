@@ -232,13 +232,20 @@ class TM_analysis:
                 if self.unique_anno and len(anno_list) > 1:
                     continue
 
+                # Generate all alignments first to enable a total count:
+                alignments_anno = list()
                 for anno in anno_list:
                     # Generate alignments:
                     target = tr_muts_sp[species][anno]['seq']
                     alignments = aligner.align(target, seq)
-                    # If multiple alignments with the same score these should be weighted
-                    # so one read contributes with one observation:
-                    weight = 1.0 / len(alignments) * seq_count
+                    alignments_anno.append(alignments)
+
+                # If multiple alignments with the same score these should be weighted
+                # so one read contributes with one observation:
+                weight = 1.0 / sum(len(algn) for algn in alignments_anno) * seq_count
+                for anno, alignments in zip(anno_list, alignments_anno):
+                    # Generate alignments:
+                    target = tr_muts_sp[species][anno]['seq']
                     for alignment in alignments:
                         # Extract the alignment coordinates:
                         t_cor, q_cor = alignment.aligned
@@ -255,8 +262,8 @@ class TM_analysis:
                             continue
                         # Initiate the character observation matrix.
                         # Note that the number of observations is determined by the
-                        # weight variable, hence the dtype needs more than int8:
-                        count_mat = np.zeros((len(target), len(self.char_list)), dtype=np.uint32)
+                        # weight variable, hence the number could be less than 1:
+                        count_mat = np.zeros((len(target), len(self.char_list)))
                         # Find gaps:
                         for i in range(1, len(t_cor)):
                             for j in range(t_cor[i][0] - t_cor[i-1][1]):
