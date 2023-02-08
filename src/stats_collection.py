@@ -78,7 +78,7 @@ class STATS_collection:
             print('Loaded results from previous run... Not running stats collection.')
             return(self.concat_df)
         elif not self.common_seqs_fnam is None:
-            self.__load_commen_seqs()
+            self.__load_commen_seqs(verbose)
 
         self.verbose = verbose
         if self.verbose:
@@ -100,7 +100,7 @@ class STATS_collection:
         return(self.concat_df)
     '''
 
-    def __load_commen_seqs(self):
+    def __load_commen_seqs(self, verbose):
         # Make name to sequence dictionary for common sequences.
         # We can only allow one species if using common sequences.
         # Multiple species would require running the alignment on common sequences
@@ -111,7 +111,8 @@ class STATS_collection:
             raise Exception('Only one species allowed in sample sheet when using common sequences.')
         self.common_seqs_sp = list(sp_set)[0]
 
-        print('Using common sequences...')
+        if verbose:
+            print('Using common sequences...')
         assert(self.common_seqs_fnam[-4:] == '.bz2')
         with bz2.open(self.common_seqs_fnam, "rt") as input_fh:
             for ridx, record in enumerate(SeqIO.parse(input_fh, "fasta")):
