@@ -26,9 +26,9 @@ class SWIPE_align:
     to contain the best alignment, as defined by the alignment score.
     '''
     def __init__(self, dir_dict, tRNA_database, sample_df, score_mat, \
-                 gap_penalty=6, extension_penalty=1, min_score_align=20, \
-                 common_seqs=None, overwrite_dir=False):
-        # Swipe command template: 
+                 gap_penalty=6, extension_penalty=1, min_score_align=15, \
+                 common_seqs=None, overwrite_dir=False, verbose=True):
+        # Swipe command template:
         self.swipe_cmd_tmp = 'swipe\t--query\tINPUT_FILE\t--db\tDATABASE_FILE\t--out\tOUTPUT_FILE\t--symtype\t1\t--outfmt\t7\t--num_alignments\t3\t--num_descriptions\t3\t--evalue\t0.000000001\t--num_threads\t12\t--strand\t1\t--matrix\tSCORE_MATRIX\t-G\tGAP_PENALTY\t-E\tEXTENSION_PENALTY'
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('SCORE_MATRIX', score_mat)
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('GAP_PENALTY', str(gap_penalty))
@@ -59,7 +59,8 @@ class SWIPE_align:
                 raise Exception('Only one species allowed in sample sheet when using common sequences.')
             self.common_seqs_sp = list(sp_set)[0]
 
-            print('Using common sequences to prevent duplicated alignment.')
+            if verbose:
+                print('Using common sequences to prevent duplicated alignment.')
             assert(os.path.exists(self.common_seqs_fnam))
             assert(self.common_seqs_fnam[-4:] == '.bz2')
             with bz2.open(self.common_seqs_fnam, "rt") as input_fh:

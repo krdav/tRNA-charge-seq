@@ -48,7 +48,8 @@ def index_to_sample_df(sample_df, index_df):
     sample_df['barcode_seq'] = [index_dict['barcode'][i] for i in sample_df['barcode'].values]
     return(sample_df)
 
-def downsample_raw_input(sample_df, inp_file_df, NBdir, data_dir, seq_dir, downsample_absolute=1e5, downsample_fold=False, overwrite=True):
+def downsample_raw_input(sample_df, inp_file_df, NBdir, data_dir, seq_dir, \
+                         downsample_absolute=1e5, downsample_fold=False, overwrite=True):
     '''
     This functions provides a way of downsampling the input files
     before read processing. This enables the user to test the entire

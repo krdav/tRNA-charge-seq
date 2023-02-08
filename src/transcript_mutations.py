@@ -30,7 +30,7 @@ class TM_analysis:
     '''
     def __init__(self, dir_dict, sample_df, tRNA_database, \
                  pull_default=False, common_seqs=None, ignore_common_count=False, \
-                 overwrite_dir=False):
+                 overwrite_dir=False, verbose=True):
         self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', \
                                  'sample_name', 'replicate', 'barcode', 'tRNA_annotation', \
                                  'align_score', 'unique_annotation', 'tRNA_annotation_len', \
@@ -110,7 +110,8 @@ class TM_analysis:
                 raise Exception('Only one species allowed in sample sheet when using common sequences.')
             self.common_seqs_sp = list(sp_set)[0]
 
-            print('Using common sequences...')
+            if verbose:
+                print('Using common sequences...')
             assert(os.path.exists(self.common_seqs_fnam))
             assert(self.common_seqs_fnam[-4:] == '.bz2')
             with bz2.open(self.common_seqs_fnam, "rt") as input_fh:
