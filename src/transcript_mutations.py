@@ -379,7 +379,7 @@ class TM_analysis:
 
     def plot_transcript_cov(self, topN=50, species='human', plot_name='tr-cov_matrix', \
                             png_dpi=False, no_plot_return=False, mito=False, \
-                            sort_rows=True, sample_list=None):
+                            sort_rows=True, sample_list=None, RTstops=False):
         # Get the mutations combined for the requested samples:
         if sample_list is None:
             sample_list = list(self.tr_muts.keys())
@@ -403,12 +403,31 @@ class TM_analysis:
             # at the highest index:
             obs_mat[i, -len(counts_all):] = counts_all
 
-        # The read count for each transcript is weighted so they all start of with
-        # the same coverage at the 3p and normalized so it sums to 100.
-        # Weigh each transcript:
-        obs_mat = obs_mat.T / obs_mat[:, -1]
-        # Normalize so coverage at 3p is 100:
-        obs_mat = 100 * obs_mat.T
+        if not RTstops:
+            # The read count for each transcript is weighted so they all start of with
+            # the same coverage at the 3p and normalized so it sums to 100.
+            # Weigh each transcript:
+            obs_mat = obs_mat.T / obs_mat[:, -1]
+            # Normalize so coverage at 3p is 100:
+            obs_mat = 100 * obs_mat.T
+        else:
+            # Calculate the decrease in coverage on each position
+            # (referred to as RT stops). This is done by a column-wise
+            # operation from right to left:
+            stops_mat = np.zeros((topN, self.longest_tRNA))
+            for ci in range(self.longest_tRNA-1, -1, -1):
+                # np.divide setting 0/0 to 1 i.e. no observations, no stop:
+                freq_stop = 1 - np.divide(obs_mat[:, ci-1], obs_mat[:, ci],
+                                          out=np.ones_like(obs_mat[:, ci]),
+                                          where=obs_mat[:, ci]!=0)
+                stops_mat[:, ci] = freq_stop
+            # Mask the end of the transcript,
+            # since this is the natural stop:
+            for i in range(topN):
+                anno = anno_topN[i]
+                seq_len = tr_muts_combi[species][anno]['seq_len']
+                stops_mat[i, -seq_len] = 0
+            obs_mat = stops_mat
 
         # Transform mutation matrix to dataframe:
         seq_idx_str = list(map(str, range(obs_mat.shape[1])))
