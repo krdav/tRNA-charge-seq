@@ -228,7 +228,7 @@ class TRNA_plot:
         self.charge_df.to_csv(fnam_abs, header=True, index=False)
 
     def plot_Ecoli_ctr(self, plot_name='ecoli-ctr_charge_plot', sample_list=None,
-                       charge_plot=False, min_obs=1, \
+                       charge_plot=True, min_obs=1, \
                        sample_list_exl=None, bc_list_exl=None):
 
         if charge_plot:
@@ -441,7 +441,7 @@ class TRNA_plot:
     def plot_abundance_corr(self, sample_pairs=None, sample_unique_pairs=None, \
         plot_type='aa', charge_plot=False, log=False, plot_name='abundance_corr_plot_aa', \
         min_obs=100, sample_list=None, verbose=True, sample_list_exl=None, \
-        bc_list_exl=None):
+        bc_list_exl=None, one2one_corr=False):
         if self.charge_df is None:
             self.get_charge_df()
 
@@ -550,7 +550,7 @@ class TRNA_plot:
                 # Plot the scatterplot:
                 fig, ax = plt.subplots(1, 1, figsize=(7, 6))
                 g1 = sns.regplot(ax=ax, data=m12, x=metric+'_1', y=metric+'_2')
-                if not charge_plot:
+                if not charge_plot or one2one_corr:
                     xy_min = [min(g1.get_xlim()), min(g1.get_ylim())]
                     xy_max = [max(g1.get_xlim()), max(g1.get_ylim())]
                     ax.plot([max(xy_min), min(xy_max)], [max(xy_min), min(xy_max)], c='r')
