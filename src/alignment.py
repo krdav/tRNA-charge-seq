@@ -325,6 +325,14 @@ class SWIPE_align:
                 name_idx = sorted(range(len(hit_dict['name'])), key=lambda k: hit_dict['name'][k])
                 name = '@'.join([hit_dict['name'][didx] for didx in name_idx])
                 query_hits['name'] = name
+                # If multiple annotations,
+                # are they all the same codon?:
+                Ncodons = len(set([n.split('-')[2] for n in hit_dict['name']]))
+                Ncompartments = len(set(['mito' in n for n in hit_dict['name']]))
+                if Ncodons == 1 and Ncompartments == 1:
+                    query_hits['one_codon'] = True
+                else:
+                    query_hits['one_codon'] = False
                 # Add qpos/dpos:
                 query_hits['qpos'] = [hit_dict['qpos'][didx] for didx in name_idx]
                 query_hits['dpos'] = [hit_dict['dpos'][didx] for didx in name_idx]
@@ -371,6 +379,7 @@ class SWIPE_align:
         query_nohits = set()
         N_mapped = 0
         N_mult_mapped = 0
+        N_mult_mapped_codon = 0
         # Read query_hits from JSON:
         SWres_fnam = '{}_SWalign.json.bz2'.format(sample_name_unique)
         with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
@@ -384,6 +393,8 @@ class SWIPE_align:
                     N_mapped += 1
                     if '@' in align_dict['name']:
                         N_mult_mapped += 1
+                    if not align_dict['one_codon']:
+                        N_mult_mapped_codon += 1
 
         # Collect information from common sequences:
         if type(row) != str and not self.common_seqs_fnam is None:
@@ -399,6 +410,8 @@ class SWIPE_align:
                         N_mapped += common_obs[readID_int]
                         if '@' in align_dict['name']:
                             N_mult_mapped += common_obs[readID_int]
+                        if not align_dict['one_codon']:
+                            N_mult_mapped_codon += 1
 
         # Dump unaligned sequences:
         SWnohits_fnam = '{}_SWalign-nohits.fasta.bz2'.format(sample_name_unique)
@@ -427,18 +440,20 @@ class SWIPE_align:
             # Multiple mappings have fasta IDs merged with "@":
             if N_mapped == 0:
                 P_ma = 0
+                P_mac = 0
             else:
                 P_ma = N_mult_mapped / N_mapped * 100
+                P_mac = N_mult_mapped_codon / N_mapped * 100
             P_sa = 100 - P_ma
 
-            return([sample_name_unique, N_mapped, P_sa, P_ma, map_p])
+            return([sample_name_unique, N_mapped, P_sa, P_ma, P_mac, map_p])
 
     def __write_stats(self, results):
         # Remove the results entry from common seqeunces:
         results = [res for res in results if not res is False]
-        stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'Mapping_percent'])
+        stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'percent_multiple_codons', 'Mapping_percent'])
         # Merge stats with sample info dataframe:
-        self.sample_df = self.sample_df.drop(columns=['N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'Mapping_percent'], errors='ignore')
+        self.sample_df = self.sample_df.drop(columns=['N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'percent_multiple_codons', 'Mapping_percent'], errors='ignore')
         self.sample_df = self.sample_df.merge(stats_df, on=['sample_name_unique'])
         # Write stats:
         self.sample_df.to_excel('sample_stats.xlsx')
