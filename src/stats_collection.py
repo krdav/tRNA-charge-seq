@@ -1,4 +1,4 @@
-import sys, os, shutil, bz2, warnings, json, gc
+import os, shutil, bz2, warnings, json, gc
 import json_stream
 from Bio import SeqIO
 import pandas as pd
@@ -9,8 +9,13 @@ from mpire import WorkerPool
 
 class STATS_collection:
     '''
-    This class is used to collect statistics from the
+    Class to collect statistics from the
     alignment results.
+    Keyword arguments:
+    common_seqs -- bzip2 compressed fasta file of commonly observed sequences to avoid duplicated alignments (default None)
+    ignore_common_count -- Ignore common count even if X_common-seq-obs.json filename exists (default False)
+    check_exists -- Check if required files exist before starting. If set to False, this will ignore checking for common count (default True)
+    overwrite_dir -- Overwrite old stats folder if any exists (default False)
     '''
     def __init__(self, dir_dict, tRNA_data, sample_df, common_seqs=None, \
                  ignore_common_count=False, check_exists=True, overwrite_dir=False):
@@ -57,9 +62,9 @@ class STATS_collection:
                                     'or explicitly set ignore_common_count=True'.format(row['sample_name_unique'], common_obs_fn))
 
         # Make output folder:
-        self.__make_dir(overwrite=overwrite_dir)
+        self._make_dir(overwrite=overwrite_dir)
 
-    def __make_dir(self, overwrite):
+    def _make_dir(self, overwrite):
         # Create folder for files:
         self.stats_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['stats_dir'])
         try:
@@ -71,14 +76,22 @@ class STATS_collection:
             else:
                 print('Using existing folder because overwrite set to false: {}'.format(self.stats_dir_abs))
 
-    def run_parallel(self, n_jobs=4, verbose=True, load_previous=False):
+    def run_parallel(self, n_jobs=4, verbose=True, \
+                     load_previous=False):
+        '''
+        Submit the input files for stats collection.
+        Keyword arguments:
+        n_jobs -- Number of subprocesses started in parallel (default 4)
+        load_previous -- Attempt to load results from a previous stats collection by looking up ALL_stats_aggregate.csv (default False)
+        verbose -- Verbose printing collection progress (default True)
+        '''
         if load_previous:
             stats_agg_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
             self.concat_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, dtype=self.stats_agg_cols_td)
             print('Loaded results from previous run... Not running stats collection.')
             return(self.concat_df)
         elif not self.common_seqs_fnam is None:
-            self.__load_commen_seqs(verbose)
+            self._load_commen_seqs(verbose)
 
         self.verbose = verbose
         if self.verbose:
@@ -87,7 +100,7 @@ class STATS_collection:
         data = list(self.sample_df.iterrows())
         with WorkerPool(n_jobs=n_jobs) as pool:
             results = pool.map(self.__collect_stats, data)
-        self.__concat_stats(results)
+        self._concat_stats(results)
         return(self.concat_df)
 
     '''
@@ -95,12 +108,12 @@ class STATS_collection:
         self.verbose = verbose
         if self.verbose:
             print('Collecting stats from:', end='')
-        results = [self.__collect_stats(index, row) for index, row in self.sample_df.iterrows()]
-        self.__concat_stats(results)
+        results = [self._collect_stats(index, row) for index, row in self.sample_df.iterrows()]
+        self._concat_stats(results)
         return(self.concat_df)
     '''
 
-    def __load_commen_seqs(self, verbose):
+    def _load_commen_seqs(self, verbose):
         # Make name to sequence dictionary for common sequences.
         # We can only allow one species if using common sequences.
         # Multiple species would require running the alignment on common sequences
@@ -119,7 +132,7 @@ class STATS_collection:
                 assert(ridx == int(record.id))
                 self.common_seqs_info[record.id] = str(record.seq)
 
-    def __collect_stats(self, index, row):
+    def _collect_stats(self, index, row):
         if self.verbose:
             print('  {}'.format(row['sample_name_unique']), end='')
 
@@ -129,9 +142,9 @@ class STATS_collection:
         with bz2.open(stats_fnam, 'wt') as stats_fh:
             # Print header to stats CSV file:
             print(','.join(self.stats_csv_header), file=stats_fh)
-            self.__read_non_common(row, stats_fh)
+            self._read_non_common(row, stats_fh)
             if not self.common_seqs_fnam is None:
-                self.__read_common(row, stats_fh)
+                self._read_common(row, stats_fh)
 
         # Filter data and aggregate to count charged/uncharged tRNAs
         # Read stats from stats CSV file:
@@ -147,7 +160,7 @@ class STATS_collection:
 
         return(stats_agg_fnam)
 
-    def __read_non_common(self, row, stats_fh):
+    def _read_non_common(self, row, stats_fh):
         # Extract info from UMI processed reads:
         trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
         UMI_info = dict()
@@ -225,7 +238,7 @@ class STATS_collection:
         del UMI_info
         gc.collect()
 
-    def __read_common(self, row, stats_fh):
+    def _read_common(self, row, stats_fh):
         # Read common sequences observations for this sample:
         common_obs_fn = '{}/{}_common-seq-obs.json'.format(self.align_dir_abs, row['sample_name_unique'])
         with open(common_obs_fn, 'r') as fh_in:
@@ -296,7 +309,7 @@ class STATS_collection:
                 csv_line = ','.join(map(str, line_lst))
                 print(csv_line, file=stats_fh)
 
-    def __concat_stats(self, csv_paths):
+    def _concat_stats(self, csv_paths):
         # Concatenate all the aggregated stats csv files:
         stats_agg_fnam = '{}/ALL_stats_aggregate.csv'.format(self.stats_dir_abs)
         with open(stats_agg_fnam, 'w') as fh_out:

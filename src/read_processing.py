@@ -13,8 +13,8 @@ class AR_merge:
     '''
     Class to merge the paired end reads using AdapterRemoval.
     Keyword arguments:
-    AR_threads -- Threads specified to AdapterRemoval
-    overwrite_dir -- Overwrite old merge folder if any exists
+    AR_threads -- Threads specified to AdapterRemoval (default 4)
+    overwrite_dir -- Overwrite old merge folder if any exists (default False)
     '''
     def __init__(self, dir_dict, inp_file_df, MIN_READ_LEN, \
                  AR_threads=4, overwrite_dir=False):
@@ -54,8 +54,8 @@ class AR_merge:
         '''
         Submit the mate pair files for merging.
         Keyword arguments:
-        n_jobs -- Number of subprocesses of AdapterRemoval started in parallel
-        overwrite -- Overwrite files of previous run. If false, skipping mate pair files with merged files existing
+        n_jobs -- Number of subprocesses of AdapterRemoval started in parallel (default 4)
+        overwrite -- Overwrite files of previous run. If false, skipping mate pair files with merged files existing (default True)
         '''
         self.AR_overwrite = overwrite
         os.chdir(self.AdapterRemoval_dir_abs)
@@ -137,8 +137,8 @@ class BC_split:
     '''
     Class to split the merged fastq files into several files based on barcodes.
     Keyword arguments:
-    max_dist -- Maximum hamming distance between a read and a barcode to assign barcode identify to the read
-    overwrite_dir -- Overwrite old barcode split folder if any exists
+    max_dist -- Maximum hamming distance between a read and a barcode to assign barcode identify to the read (default 1)
+    overwrite_dir -- Overwrite old barcode split folder if any exists (default False)
     '''
     def __init__(self, dir_dict, sample_df, inp_file_df, overwrite_dir=False, \
                  max_dist=1):
@@ -172,8 +172,8 @@ class BC_split:
         '''
         Submit the merged files for barcode splitting.
         Keyword arguments:
-        n_jobs -- Number of subprocesses to be started in parallel
-        load_previous -- Attempt to load results from a previous barcode split by looking up index-pair_stats.xlsx and sample_stats.xlsx
+        n_jobs -- Number of subprocesses to be started in parallel (default 4)
+        load_previous -- Attempt to load results from a previous barcode split by looking up index-pair_stats.xlsx and sample_stats.xlsx (default False)
         '''
         # Must check that not too many file handles are opened at the same time:
         max_fh = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
@@ -306,8 +306,8 @@ class Kmer_analysis:
     Class to find Kmers at the end of unmapped reads,
     in order to determine if barcode mapping was efficient.
     Keyword arguments:
-    k_size -- Kmer size
-    overwrite -- Overwrite previous Kmer analysis folder
+    k_size -- Kmer size (default 5)
+    overwrite -- Overwrite previous Kmer analysis folder (default True)
     '''
     def __init__(self, dir_dict, inp_file_df, index_df, \
                  k_size=5, overwrite=True):
@@ -434,8 +434,8 @@ class BC_analysis:
     Class to find barcodes at the end of unmapped reads,
     in order to determine if barcode mapping was efficient.
     Keyword arguments:
-    BC_size_3p -- Length of the barcode sequence to extract from the 3p end of each barcode in index_df
-    overwrite -- Overwrite previous barcode analysis folder
+    BC_size_3p -- Length of the barcode sequence to extract from the 3p end of each barcode in index_df (default 5)
+    overwrite -- Overwrite previous barcode analysis folder (default True)
     '''
     def __init__(self, dir_dict, inp_file_df, index_df, \
                  BC_size_3p=5, overwrite=True):
@@ -476,9 +476,9 @@ class BC_analysis:
         '''
         Submit search for barcodes in unmapped reads.
         Keyword arguments:
-        search_size -- Distance from the 3p of the read to search within
-        group_dist -- Group distance smaller than or equal to in aggregated output file
-        load_previous -- Attempt to load results from a previous barcode search by looking up the X_unmapped-BC-analysis.xlsx results file
+        search_size -- Distance from the 3p of the read to search within (default 13)
+        group_dist -- Group distance smaller than or equal to in aggregated output file (default 1)
+        load_previous -- Attempt to load results from a previous barcode search by looking up the X_unmapped-BC-analysis.xlsx results file (default False)
         '''
         if load_previous:
             self.sum_df = pd.read_excel('{}/{}{}_unmapped-BC-analysis.xlsx'.format(self.BCanalysis_dir_abs, 'ALL-groupby-dist-', group_dist), index_col=0)
@@ -556,8 +556,8 @@ class UMI_trim:
     add it to the fasta header and generate statistics
     on the UMI use.
     Keyword arguments:
-    UMI_end -- Set of nucleotides posible on the last UMI position
-    overwrite_dir -- Overwrite previous UMI trim folder
+    UMI_end -- Set of nucleotides posible on the last UMI position (default {'T', 'C'})
+    overwrite_dir -- Overwrite previous UMI trim folder (default False)
     '''
     def __init__(self, dir_dict, sample_df, UMI_end={'T', 'C'}, \
                  overwrite_dir=False):
@@ -598,8 +598,8 @@ class UMI_trim:
         '''
         Submit files for UMI trimming.
         Keyword arguments:
-        n_jobs -- Number of subprocesses to be started in parallel
-        load_previous -- Attempt to load results from a previous UMI trim by looking up sample_stats.xlsx
+        n_jobs -- Number of subprocesses to be started in parallel (default 4)
+        load_previous -- Attempt to load results from a previous UMI trim by looking up sample_stats.xlsx (default False)
         '''
         if load_previous is False:
             # Run parallel:
