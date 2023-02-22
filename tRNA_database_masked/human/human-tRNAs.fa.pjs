@@ -1,0 +1,18 @@
+{
+  "version": "1.2",
+  "dbname": "human-tRNAs.fa",
+  "dbtype": "Protein",
+  "db-version": 4,
+  "description": "human-tRNAs.fa",
+  "number-of-letters": 21710,
+  "number-of-sequences": 283,
+  "last-updated": "2023-02-22T12:31:00",
+  "number-of-volumes": 1,
+  "bytes-total": 50624,
+  "bytes-to-cache": 24338,
+  "files": [
+    "human-tRNAs.fa.phr",
+    "human-tRNAs.fa.pin",
+    "human-tRNAs.fa.psq"
+  ]
+}

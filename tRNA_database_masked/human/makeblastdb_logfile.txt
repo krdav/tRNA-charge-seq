@@ -1,0 +1,16 @@
+Starting subprocess with command:['makeblastdb', '-dbtype', 'prot', '-in', 'human-tRNAs.fa', '-blastdb_version', '4']
+
+
+Building a new DB, current time: 02/22/2023 12:31:17
+New DB name:   /home/sulab/tRNA-charge-seq/projects/alignment-opti/data/transcript_mutations/tRNA_database_masked/human/human-tRNAs.fa
+New DB title:  human-tRNAs.fa
+Sequence type: Protein
+Keep MBits: T
+Maximum file size: 3000000000B
+Adding sequences from FASTA; added 283 sequences in 0.00272393 seconds.
+
+
+
+****** DONE ******
+
+
