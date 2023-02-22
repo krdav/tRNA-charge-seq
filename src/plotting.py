@@ -621,7 +621,7 @@ class TRNA_plot:
             data.append((index, row))
         # Collect data for plotting for each sample:
         with WorkerPool(n_jobs=n_jobs) as pool:
-            results = pool.map(self.__collect_no_temp_mat, data)
+            results = pool.map(self._collect_no_temp_mat, data)
 
         # Make logo:
         self._run_logomaker(results, plot_name)
@@ -673,7 +673,7 @@ class TRNA_plot:
         # Read each stats CSV file and generate its count matrix:
         data = list(self.sample_df.iterrows())
         with WorkerPool(n_jobs=n_jobs) as pool:
-            results = pool.map(self.__collect_UMI_mat, data)
+            results = pool.map(self._collect_UMI_mat, data)
         self._run_logomaker(results, plot_name)
 
     def _collect_UMI_mat(self, index, row):
@@ -752,7 +752,7 @@ class TRNA_plot:
             data.append((index, row))
         # Collect data for plotting for each sample:
         with WorkerPool(n_jobs=n_jobs) as pool:
-            results = pool.map(self.__collect_coverage_data, data)
+            results = pool.map(self._collect_coverage_data, data)
         if verbose:
             print('\nNow plotting sample:', end='')
 

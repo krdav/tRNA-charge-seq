@@ -99,7 +99,7 @@ class STATS_collection:
         # Run parallel:
         data = list(self.sample_df.iterrows())
         with WorkerPool(n_jobs=n_jobs) as pool:
-            results = pool.map(self.__collect_stats, data)
+            results = pool.map(self._collect_stats, data)
         self._concat_stats(results)
         return(self.concat_df)
 

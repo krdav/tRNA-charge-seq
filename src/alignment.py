@@ -122,14 +122,14 @@ class SWIPE_align:
                 data.append((0, 'common-seqs'))
                 self._prep_common()
             with WorkerPool(n_jobs=n_jobs) as pool:
-                swipe_return = pool.map(self.__start_SWIPE, data)
+                swipe_return = pool.map(self._start_SWIPE, data)
             if not self.common_seqs_fnam is None:
                 os.remove(self.common_seqs_fnam[:-4])
             # Collect results in parallel:
             if self.verbose:
                 print('\nCollecting alignment statistics, from sample:', end='')
             with WorkerPool(n_jobs=n_jobs) as pool:
-                results = pool.map(self.__collect_stats, data)
+                results = pool.map(self._collect_stats, data)
             self._write_stats(results)
             os.chdir(self.dir_dict['NBdir'])
             return(self.sample_df)

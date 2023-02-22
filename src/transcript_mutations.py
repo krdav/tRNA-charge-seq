@@ -122,9 +122,9 @@ class TM_analysis:
                     self.common_seqs_dict[seq] = ridx
 
         # Make output folder:
-        self.__make_dir(overwrite_dir)
+        self._make_dir(overwrite_dir)
 
-    def __make_dir(self, overwrite):
+    def _make_dir(self, overwrite):
         # Create folder for files:
         self.TM_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['TM_dir'])
         try:
@@ -151,16 +151,16 @@ class TM_analysis:
         # Find mutations in the transcripts for each file:
         data = [(idx, row) for idx, row in self.sample_df.iterrows() if row['sample_name_unique'] in sample_list]
         with WorkerPool(n_jobs=n_jobs) as pool:
-            results = pool.map(self.__collect_transcript_muts, data)
+            results = pool.map(self._collect_transcript_muts, data)
         # Fill out the transcript mutations per sample:
         for unam_res in results:
             unam, res = unam_res
             self.tr_muts[unam] = res
         # Fix ends if requested:
         if fix_end:
-            self.__fix_end()
+            self._fix_end()
 
-    def __collect_transcript_muts(self, index, row):
+    def _collect_transcript_muts(self, index, row):
         if self.verbose:
             print('  {}'.format(row['sample_name_unique']), end='')
 
@@ -283,15 +283,15 @@ class TM_analysis:
                 tr_muts_sp[species][anno]['PSCM'] = pd.DataFrame(tr_muts_sp[species][anno]['PSCM'], columns=self.char_list)
                 if tr_muts_sp[species][anno]['PSCM'].max().max() > 0:
                     # Mutation frequencies:
-                    freq_mut = self.__calc_mut_freq(tr_muts_sp, anno, species, gap_only=False, min_count_show=0)
+                    freq_mut = self._calc_mut_freq(tr_muts_sp, anno, species, gap_only=False, min_count_show=0)
                     tr_muts_sp[species][anno]['mut_freq'] = freq_mut
                     # Gap frequencies:
-                    freq_gap = self.__calc_mut_freq(tr_muts_sp, anno, species, gap_only=True, min_count_show=0)
+                    freq_gap = self._calc_mut_freq(tr_muts_sp, anno, species, gap_only=True, min_count_show=0)
                     tr_muts_sp[species][anno]['gap_freq'] = freq_gap
         os.remove(dedup_tmp)
         return((row['sample_name_unique'], tr_muts_sp))
  
-    def __combine_tr_muts(self, sample_list, freq_avg_weighted=True):
+    def _combine_tr_muts(self, sample_list, freq_avg_weighted=True):
         sample_list_cp = copy.deepcopy(sample_list)
         tr_muts_combi = copy.deepcopy(self.tr_muts_tmp)
 
@@ -328,14 +328,14 @@ class TM_analysis:
                     # Skip if no observations:
                     if sp_muts[species][anno]['PSCM'].max().max() == 0:
                         continue
-                    tr_muts_combi[species][anno]['mut_freq'] = self.__calc_mut_freq(tr_muts_combi, anno, species, gap_only=False, min_count_show=0)
-                    tr_muts_combi[species][anno]['gap_freq'] = self.__calc_mut_freq(tr_muts_combi, anno, species, gap_only=True, min_count_show=0)
+                    tr_muts_combi[species][anno]['mut_freq'] = self._calc_mut_freq(tr_muts_combi, anno, species, gap_only=False, min_count_show=0)
+                    tr_muts_combi[species][anno]['gap_freq'] = self._calc_mut_freq(tr_muts_combi, anno, species, gap_only=True, min_count_show=0)
 
         if len(sample_list_cp) > 0:
             print('Following samples could not be found and therefore not combined: {}'.format(str(sample_list_cp)))
         return(tr_muts_combi)
 
-    def __fix_end(self):
+    def _fix_end(self):
         for unam in self.tr_muts:
             for species in self.tr_muts[unam]:
                 for anno in self.tr_muts[unam][species]:
@@ -352,10 +352,10 @@ class TM_analysis:
         # Get the mutations combined for the requested samples:
         if sample_list is None:
             sample_list = list(self.tr_muts.keys())
-        tr_muts_combi = self.__combine_tr_muts(sample_list)
+        tr_muts_combi = self._combine_tr_muts(sample_list)
 
         # Sort according to observations:
-        anno_sorted = self.__sort_anno(tr_muts_combi, species)
+        anno_sorted = self._sort_anno(tr_muts_combi, species)
         if topN > len(anno_sorted):
             topN = len(anno_sorted)
 
@@ -384,10 +384,10 @@ class TM_analysis:
         # Get the mutations combined for the requested samples:
         if sample_list is None:
             sample_list = list(self.tr_muts.keys())
-        tr_muts_combi = self.__combine_tr_muts(sample_list)
+        tr_muts_combi = self._combine_tr_muts(sample_list)
 
         # Sort according to observations:
-        anno_sorted = self.__sort_anno(tr_muts_combi, species, mito=mito)
+        anno_sorted = self._sort_anno(tr_muts_combi, species, mito=mito)
         if topN > len(anno_sorted):
             topN = len(anno_sorted)
         
@@ -585,21 +585,21 @@ class TM_analysis:
             # Process each pair:
             for name_idx, sp1l_sp2l in enumerate(zip(*pair_list)):
                 sp1l, sp2l = sp1l_sp2l
-                tr_muts_combi_s1 = self.__combine_tr_muts(sp1l, freq_avg_weighted=freq_avg_weighted)
-                tr_muts_combi_s2 = self.__combine_tr_muts(sp2l, freq_avg_weighted=freq_avg_weighted)
+                tr_muts_combi_s1 = self._combine_tr_muts(sp1l, freq_avg_weighted=freq_avg_weighted)
+                tr_muts_combi_s2 = self._combine_tr_muts(sp2l, freq_avg_weighted=freq_avg_weighted)
 
                 # Find the transcripts to compare:
                 if not anno_substring_compare is None:
                     tr_compare_list = [anno for anno in tr_muts_combi_s1[species] if anno_substring_compare in anno]
                     # Sort list of annotations:
-                    tr_compare_list = self.__sort_freq_diff(tr_muts_combi_s1, \
+                    tr_compare_list = self._sort_freq_diff(tr_muts_combi_s1, \
                                                             tr_muts_combi_s2, \
                                                             species, min_count_show, \
                                                             gap_only, mito, topN_select, \
                                                             list_to_sort=tr_compare_list)
                 elif tr_compare_inp is None:
                     # Sort annotations according to largest distance between samples:
-                    topN_anno = self.__sort_freq_diff(tr_muts_combi_s1, tr_muts_combi_s2, \
+                    topN_anno = self._sort_freq_diff(tr_muts_combi_s1, tr_muts_combi_s2, \
                                                       species, min_count_show, gap_only, \
                                                       mito, topN_select)
                     tr_compare_list = topN_anno[:topN]
@@ -614,8 +614,8 @@ class TM_analysis:
                 for anno in tr_compare_list:
                     if not anno in tr_muts_combi_s1[species] or not anno in tr_muts_combi_s2[species]:
                         continue
-                    freq_mut_s1, min_count_mask_s1 = self.__get_mut_freq_filted(tr_muts_combi_s1, species, anno, min_count_show, gap_only)
-                    freq_mut_s2, min_count_mask_s2 = self.__get_mut_freq_filted(tr_muts_combi_s2, species, anno, min_count_show, gap_only)
+                    freq_mut_s1, min_count_mask_s1 = self._get_mut_freq_filted(tr_muts_combi_s1, species, anno, min_count_show, gap_only)
+                    freq_mut_s2, min_count_mask_s2 = self._get_mut_freq_filted(tr_muts_combi_s2, species, anno, min_count_show, gap_only)
                     if freq_mut_s1 is None or freq_mut_s2 is None:
                         continue
                     # Positional coverage has to be fulfilled in both samples:
@@ -667,7 +667,7 @@ class TM_analysis:
                 if no_plot_return:
                     plt.close(fig)
 
-    def __sort_freq_diff(self, tr_muts_combi_s1, tr_muts_combi_s2, species, \
+    def _sort_freq_diff(self, tr_muts_combi_s1, tr_muts_combi_s2, species, \
                          min_count_show, gap_only, mito, topN_select, \
                          list_to_sort=None):
         # Default, sort all annotations:
@@ -683,8 +683,8 @@ class TM_analysis:
             # If mito is specified, skip non-mito annotations:
             if mito and 'mito' not in anno:
                 continue
-            freq_mut_s1, min_count_mask_s1 = self.__get_mut_freq_filted(tr_muts_combi_s1, species, anno, min_count_show, gap_only)
-            freq_mut_s2, min_count_mask_s2 = self.__get_mut_freq_filted(tr_muts_combi_s2, species, anno, min_count_show, gap_only)
+            freq_mut_s1, min_count_mask_s1 = self._get_mut_freq_filted(tr_muts_combi_s1, species, anno, min_count_show, gap_only)
+            freq_mut_s2, min_count_mask_s2 = self._get_mut_freq_filted(tr_muts_combi_s2, species, anno, min_count_show, gap_only)
             if freq_mut_s1 is None or freq_mut_s2 is None:
                 continue
             # Positional coverage has to be fulfilled in both samples:
@@ -707,7 +707,7 @@ class TM_analysis:
         topN_anno = [tup[0] for tup in sorted(topN_anno, key=lambda x: x[1], reverse=True)]
         return(topN_anno)
 
-    def __get_mut_freq_filted(self, tr_muts_combi, species, anno, min_count_show, gap_only):
+    def _get_mut_freq_filted(self, tr_muts_combi, species, anno, min_count_show, gap_only):
         if gap_only:
             freq_mut = tr_muts_combi[species][anno]['gap_freq']
         else:
@@ -727,10 +727,10 @@ class TM_analysis:
         # Get the mutations combined for the requested samples:
         if sample_list is None:
             sample_list = list(self.tr_muts.keys())
-        tr_muts_combi = self.__combine_tr_muts(sample_list, freq_avg_weighted=freq_avg_weighted)
+        tr_muts_combi = self._combine_tr_muts(sample_list, freq_avg_weighted=freq_avg_weighted)
 
         # Sort according to observations:
-        anno_sorted = self.__sort_anno(tr_muts_combi, species, mito=mito)
+        anno_sorted = self._sort_anno(tr_muts_combi, species, mito=mito)
         if topN > len(anno_sorted):
             topN = len(anno_sorted)
         # Find the mutations and insert them into a matrix:
@@ -807,7 +807,7 @@ class TM_analysis:
         else:
             return((mut_mat_df, fig, sorted_anno))
 
-    def __sort_anno(self, tr_muts_combi, species, mito=False):
+    def _sort_anno(self, tr_muts_combi, species, mito=False):
         # Sort according to observations:
         anno2obs = dict()
         for anno in tr_muts_combi[species]:
@@ -822,7 +822,7 @@ class TM_analysis:
         anno_sorted = sorted(anno2obs.items(), key=lambda x: x[1], reverse=True)
         return(anno_sorted)
 
-    def __calc_mut_freq(self, tr_muts_combi, anno, species, gap_only, min_count_show):
+    def _calc_mut_freq(self, tr_muts_combi, anno, species, gap_only, min_count_show):
         tr_len = tr_muts_combi[species][anno]['seq_len']
         tr_seq = tr_muts_combi[species][anno]['seq']
 
@@ -862,7 +862,7 @@ class TM_analysis:
         # Get the mutations combined for the requested samples:
         if sample_list is None:
             sample_list = list(self.tr_muts.keys())
-        tr_muts_combi = self.__combine_tr_muts(sample_list, freq_avg_weighted=freq_avg_weighted)
+        tr_muts_combi = self._combine_tr_muts(sample_list, freq_avg_weighted=freq_avg_weighted)
 
         # Find and store masked sequence #
         for species in tr_muts_combi:
@@ -1002,11 +1002,11 @@ class TM_analysis:
                     fh.write('>{}\n{}\n'.format(anno, masked_seq))
             
             # Make BLAST DB on fasta:
-            self.__makeblastdb(out_dir_sp_abs, out_fnam)
+            self._makeblastdb(out_dir_sp_abs, out_fnam)
 
         return(tRNA_database_masked)
     
-    def __makeblastdb(self, file_dir, fnam):
+    def _makeblastdb(self, file_dir, fnam):
         '''
         Build BLAST database (required for SWIPE).
         Notice, it is built with sequence type = protein

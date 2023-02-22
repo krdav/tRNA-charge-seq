@@ -62,7 +62,7 @@ class AR_merge:
         try:
             data = list(self.inp_file_df.iterrows())
             with WorkerPool(n_jobs=n_jobs) as pool:
-                results = pool.map(self.__start_AR, data)
+                results = pool.map(self._start_AR, data)
             self._collect_stats()
             os.chdir(self.dir_dict['NBdir'])
             return(self.inp_file_df)
@@ -187,7 +187,7 @@ class BC_split:
             # Run parallel:
             data = list(self.inp_file_df.iterrows())
             with WorkerPool(n_jobs=n_jobs) as pool:
-                results = pool.map(self.__split_file, data)
+                results = pool.map(self._split_file, data)
             self._collect_stats(results)
         else:
             try:
@@ -605,7 +605,7 @@ class UMI_trim:
             # Run parallel:
             data = list(self.sample_df.iterrows())
             with WorkerPool(n_jobs=n_jobs) as pool:
-                results = pool.map(self.__trim_file, data)
+                results = pool.map(self._trim_file, data)
             self._collect_stats(results)
         else:
             try:
