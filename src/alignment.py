@@ -1,4 +1,4 @@
-import sys, os, shutil, bz2, json
+import os, shutil, bz2, json
 from subprocess import Popen, PIPE, STDOUT
 import xml.etree.cElementTree as ET
 from Bio import SeqIO
@@ -14,25 +14,29 @@ import json_stream
 class SWIPE_align:
     '''
     This class is used to align reads to a reference database.
-    In the case of tRNAs, a fasta file with known tRNA sequences
-    for the appropriate species.
     This method uses the SWIPE aligner:
     https://github.com/torognes/swipe
     SWIPE performs Smith-Waterman local sequence alignment
-    on each read against all sequences in the database i.e.
-    the results do not rely on any alignemnt heuristics
-    which other aligners like BLAST, Bowtie, GSNAP etc do.
-    Because no heuristics are used, the results are guaranteed
-    to contain the best alignment, as defined by the alignment score.
+    on each read against all sequences in the database.
+    Keyword arguments:
+    gap_penalty -- Penalty for opening a gap in the alignment (default 6)
+    extension_penalty -- Penalty for extending a gap in the alignment (default 1)
+    min_score_align -- Minimum alignment score to accept an alignment (default 15)
+    common_seqs -- bzip2 compressed fasta file of commonly observed sequences to avoid duplicated alignments (default None)
+    overwrite_dir -- Overwrite old alignment folder if any exists (default False)
+    SWIPE_threads -- Threads specified to SWIPE (default 4)
+    verbose -- Verbose printing (default True)
     '''
     def __init__(self, dir_dict, tRNA_database, sample_df, score_mat, \
                  gap_penalty=6, extension_penalty=1, min_score_align=15, \
-                 common_seqs=None, overwrite_dir=False, verbose=True):
+                 common_seqs=None, overwrite_dir=False, SWIPE_threads=4, \
+                 verbose=True):
         # Swipe command template:
-        self.swipe_cmd_tmp = 'swipe\t--query\tINPUT_FILE\t--db\tDATABASE_FILE\t--out\tOUTPUT_FILE\t--symtype\t1\t--outfmt\t7\t--num_alignments\t3\t--num_descriptions\t3\t--evalue\t0.000000001\t--num_threads\t12\t--strand\t1\t--matrix\tSCORE_MATRIX\t-G\tGAP_PENALTY\t-E\tEXTENSION_PENALTY'
+        self.swipe_cmd_tmp = 'swipe\t--query\tINPUT_FILE\t--db\tDATABASE_FILE\t--out\tOUTPUT_FILE\t--symtype\t1\t--outfmt\t7\t--num_alignments\t3\t--num_descriptions\t3\t--evalue\t0.000000001\t--num_threads\tTHREADS\t--strand\t1\t--matrix\tSCORE_MATRIX\t-G\tGAP_PENALTY\t-E\tEXTENSION_PENALTY'
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('SCORE_MATRIX', score_mat)
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('GAP_PENALTY', str(gap_penalty))
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('EXTENSION_PENALTY', str(extension_penalty))
+        self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('THREADS', str(SWIPE_threads))
         self.SWIPE_overwrite = True
         self.dry_run = False
         # Input:
@@ -72,9 +76,9 @@ class SWIPE_align:
             self.Ncommon = len(self.common_seqs_dict)
 
         # Make output folder:
-        self.__make_dir(overwrite_dir)
+        self._make_dir(overwrite_dir)
 
-    def __make_dir(self, overwrite):
+    def _make_dir(self, overwrite):
         # Create folder for files:
         self.align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
         try:
@@ -86,7 +90,16 @@ class SWIPE_align:
             else:
                 print('Using existing folder because overwrite set to false: {}'.format(self.align_dir_abs))
 
-    def run_parallel(self, n_jobs=4, overwrite=True, verbose=True, load_previous=False):
+    def run_parallel(self, n_jobs=4, overwrite=True, \
+                     verbose=True, load_previous=False):
+        '''
+        Submit the input files for alignment.
+        Keyword arguments:
+        n_jobs -- Number of subprocesses of SWIPE started in parallel (default 4)
+        overwrite -- Overwrite files of previous run. If false, skipping mate pair files with merged files existing (default True)
+        load_previous -- Attempt to load results from a previous alignment by looking up sample_stats.xlsx (default False)
+        verbose -- Verbose printing alignment progress (default True)
+        '''
         self.SWIPE_overwrite = overwrite
         self.verbose = verbose
         if load_previous:
@@ -107,7 +120,7 @@ class SWIPE_align:
             data = list(self.sample_df.iterrows())
             if not self.common_seqs_fnam is None:
                 data.append((0, 'common-seqs'))
-                self.__prep_common()
+                self._prep_common()
             with WorkerPool(n_jobs=n_jobs) as pool:
                 swipe_return = pool.map(self.__start_SWIPE, data)
             if not self.common_seqs_fnam is None:
@@ -117,7 +130,7 @@ class SWIPE_align:
                 print('\nCollecting alignment statistics, from sample:', end='')
             with WorkerPool(n_jobs=n_jobs) as pool:
                 results = pool.map(self.__collect_stats, data)
-            self.__write_stats(results)
+            self._write_stats(results)
             os.chdir(self.dir_dict['NBdir'])
             return(self.sample_df)
         except Exception as err:
@@ -136,13 +149,13 @@ class SWIPE_align:
             print('Running Swipe on:', end='')
         os.chdir(self.align_dir_abs)
         try:
-            swipe_return = [self.__start_SWIPE(index, row) for index, row in self.sample_df.iterrows()]
+            swipe_return = [self._start_SWIPE(index, row) for index, row in self.sample_df.iterrows()]
             # Collect results:
             if not dry_run:
                 if self.verbose:
                     print('\nCollecting alignment statistics, from sample:', end='')
-                results = [self.__collect_stats(index, row) for index, row in self.sample_df.iterrows()]
-                self.__write_stats(results)
+                results = [self._collect_stats(index, row) for index, row in self.sample_df.iterrows()]
+                self._write_stats(results)
             os.chdir(self.dir_dict['NBdir'])
             return(self.sample_df)
         except Exception as err:
@@ -150,24 +163,24 @@ class SWIPE_align:
             raise err
     '''
 
-    def __prep_common(self):
+    def _prep_common(self):
         # Convert reads to uncompressed fasta as required by Swipe:
         with bz2.open(self.common_seqs_fnam, 'rb') as fh_in:
             with open(self.common_seqs_fnam[:-4], 'wb') as fh_out:
                 shutil.copyfileobj(fh_in, fh_out)
 
-    def __start_SWIPE(self, index, row):
+    def _start_SWIPE(self, index, row):
         # Generate Swipe command line:
         if type(row) == str:  # special case for common sequences
             sample_name_unique = 'common-seqs'
             sp_tRNA_database = self.tRNA_database[self.common_seqs_sp]
-            swipe_cmd, swipe_outfile = self.__make_SWIPE_cmd(sp_tRNA_database, self.common_seqs_fnam[:-4], sample_name_unique)
+            swipe_cmd, swipe_outfile = self._make_SWIPE_cmd(sp_tRNA_database, self.common_seqs_fnam[:-4], sample_name_unique)
         else:
             sp_tRNA_database = self.tRNA_database[row['species']]
             sample_name_unique = row['sample_name_unique']
             trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, sample_name_unique)
             trimmed_fasta_fn = trimmed_fn[:-10] + '.fasta'
-            swipe_cmd, swipe_outfile = self.__make_SWIPE_cmd(sp_tRNA_database, trimmed_fasta_fn, sample_name_unique)
+            swipe_cmd, swipe_outfile = self._make_SWIPE_cmd(sp_tRNA_database, trimmed_fasta_fn, sample_name_unique)
         if self.dry_run:
             print('Swipe cmd: {}'.format(' '.join(swipe_cmd)))
             return(1)
@@ -217,9 +230,9 @@ class SWIPE_align:
             file.write('\n****** DONE ******\n\n\n')
 
         # Reformat output so it can be read as XML:
-        swipe_outfile_xml = self.__prep_SWIPE_XML(swipe_outfile)
+        swipe_outfile_xml = self._prep_SWIPE_XML(swipe_outfile)
         # Read XML file as a streamable generator:
-        json_stream = self.__parse_SWIPE_XML(swipe_outfile_xml, sp_tRNA_database)
+        json_stream = self._parse_SWIPE_XML(swipe_outfile_xml, sp_tRNA_database)
         # Dump query_hits as JSON:
         with bz2.open(SWres_fnam, 'wt', encoding="utf-8") as fh:
             json.dump(json_stream, fh)
@@ -231,7 +244,7 @@ class SWIPE_align:
         os.remove(swipe_outfile_xml)
         return(1)
     
-    def __make_SWIPE_cmd(self, sp_tRNA_database, trimmed_fn, sample_name_unique):
+    def _make_SWIPE_cmd(self, sp_tRNA_database, trimmed_fn, sample_name_unique):
         swipe_cmd = self.swipe_cmd_tmp
         swipe_cmd = swipe_cmd.replace('DATABASE_FILE', sp_tRNA_database)
         swipe_cmd = swipe_cmd.replace('INPUT_FILE', trimmed_fn)
@@ -240,7 +253,7 @@ class SWIPE_align:
         swipe_cmd = swipe_cmd.split('\t')
         return(swipe_cmd, swipe_outfile)
     
-    def __prep_SWIPE_XML(self, swipe_outfile):
+    def _prep_SWIPE_XML(self, swipe_outfile):
         # Add "data" as root for the xml file:
         swipe_outfile_xml = swipe_outfile + '.xml'
         xml_first_line = '<data>\n'
@@ -261,7 +274,7 @@ class SWIPE_align:
     # to avoid loading all into memory when writing to JSON.
     # See: https://pypi.org/project/json-stream/
     @streamable_dict
-    def __parse_SWIPE_XML(self, swipe_outfile_xml, sp_tRNA_database):
+    def _parse_SWIPE_XML(self, swipe_outfile_xml, sp_tRNA_database):
         # Read the database IDs and use them to verify alignment results:
         db_id_set = set()
         for record in SeqIO.parse(sp_tRNA_database, "fasta"):
@@ -360,7 +373,7 @@ class SWIPE_align:
                 high_score = -999
                 elem.clear() # this clears the element from memory
 
-    def __collect_stats(self,  index, row):
+    def _collect_stats(self,  index, row):
         # Collect stats about the alignment #
         if type(row) == str:
             sample_name_unique = 'common-seqs'
@@ -448,7 +461,7 @@ class SWIPE_align:
 
             return([sample_name_unique, N_mapped, P_sa, P_ma, P_mac, map_p])
 
-    def __write_stats(self, results):
+    def _write_stats(self, results):
         # Remove the results entry from common seqeunces:
         results = [res for res in results if not res is False]
         stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'percent_multiple_codons', 'Mapping_percent'])
@@ -460,6 +473,7 @@ class SWIPE_align:
 
 
 def indices(lst, element):
+    '''Find all indices of an element in a list.'''
     result = []
     offset = -1
     while True:
@@ -468,4 +482,5 @@ def indices(lst, element):
         except ValueError:
             return result
         result.append(offset)
+
 

@@ -1,4 +1,4 @@
-import sys, os, shutil, bz2, resource
+import os, shutil, bz2, resource
 from subprocess import Popen, PIPE, STDOUT
 from Bio import SeqIO
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
@@ -11,7 +11,10 @@ import jellyfish
 
 class AR_merge:
     '''
-    This class is used to merge the paired end reads using AdapterRomoval.
+    Class to merge the paired end reads using AdapterRemoval.
+    Keyword arguments:
+    AR_threads -- Threads specified to AdapterRemoval (default 4)
+    overwrite_dir -- Overwrite old merge folder if any exists (default False)
     '''
     def __init__(self, dir_dict, inp_file_df, MIN_READ_LEN, \
                  AR_threads=4, overwrite_dir=False):
@@ -33,9 +36,9 @@ class AR_merge:
             assert(os.path.exists(fnam_mate2))
 
         # Make output folder:
-        self.__make_dir(overwrite_dir)
+        self._make_dir(overwrite_dir)
 
-    def __make_dir(self, overwrite=True):
+    def _make_dir(self, overwrite=True):
         # Create folder for files:
         self.AdapterRemoval_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['AdapterRemoval_dir'])
         try:
@@ -48,13 +51,19 @@ class AR_merge:
                 print('Using existing folder because overwrite set to false: {}'.format(self.AdapterRemoval_dir_abs))
 
     def run_parallel(self, n_jobs=4, overwrite=True):
+        '''
+        Submit the mate pair files for merging.
+        Keyword arguments:
+        n_jobs -- Number of subprocesses of AdapterRemoval started in parallel (default 4)
+        overwrite -- Overwrite files of previous run. If false, skipping mate pair files with merged files existing (default True)
+        '''
         self.AR_overwrite = overwrite
         os.chdir(self.AdapterRemoval_dir_abs)
         try:
             data = list(self.inp_file_df.iterrows())
             with WorkerPool(n_jobs=n_jobs) as pool:
                 results = pool.map(self.__start_AR, data)
-            self.__collect_stats()
+            self._collect_stats()
             os.chdir(self.dir_dict['NBdir'])
             return(self.inp_file_df)
         except Exception as err:
@@ -66,8 +75,8 @@ class AR_merge:
         self.AR_overwrite = overwrite
         os.chdir(self.AdapterRemoval_dir_abs)
         try:
-            results = [self.__start_AR(index, row) for index, row in self.inp_file_df.iterrows()]
-            self.__collect_stats()
+            results = [self._start_AR(index, row) for index, row in self.inp_file_df.iterrows()]
+            self._collect_stats()
             os.chdir(self.dir_dict['NBdir'])
             return(self.inp_file_df)
         except Exception as err:
@@ -75,7 +84,7 @@ class AR_merge:
             raise err
     '''
 
-    def __start_AR(self, index, row):
+    def _start_AR(self, index, row):
         AR_cmd = self.AR_cmd_tmp.copy()
         basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
         # Check if output exists, and skip if not overwrite:
@@ -105,7 +114,7 @@ class AR_merge:
             file.write('\n****** DONE ******\n\n\n')
         return(1)
 
-    def __collect_stats(self):
+    def _collect_stats(self):
         N_pairs = list()
         N_merged = list()
         for _, row in self.inp_file_df.iterrows():
@@ -126,7 +135,10 @@ class AR_merge:
 
 class BC_split:
     '''
-    This class is used to split fastq files based on barcodes.
+    Class to split the merged fastq files into several files based on barcodes.
+    Keyword arguments:
+    max_dist -- Maximum hamming distance between a read and a barcode to assign barcode identify to the read (default 1)
+    overwrite_dir -- Overwrite old barcode split folder if any exists (default False)
     '''
     def __init__(self, dir_dict, sample_df, inp_file_df, overwrite_dir=False, \
                  max_dist=1):
@@ -142,9 +154,9 @@ class BC_split:
             assert(os.path.exists(merged_fastq_fn))
         
         # Make output folder:
-        self.__make_dir(overwrite_dir)
+        self._make_dir(overwrite_dir)
 
-    def __make_dir(self, overwrite):
+    def _make_dir(self, overwrite):
         # Create folder for files:
         self.BC_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['BC_dir'])
         try:
@@ -157,6 +169,12 @@ class BC_split:
                 print('Using existing folder because overwrite set to false: {}'.format(self.BC_dir_abs))
 
     def run_parallel(self, n_jobs=4, load_previous=False):
+        '''
+        Submit the merged files for barcode splitting.
+        Keyword arguments:
+        n_jobs -- Number of subprocesses to be started in parallel (default 4)
+        load_previous -- Attempt to load results from a previous barcode split by looking up index-pair_stats.xlsx and sample_stats.xlsx (default False)
+        '''
         # Must check that not too many file handles are opened at the same time:
         max_fh = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
         fh_div = len(self.sample_df)*3 // max_fh
@@ -170,7 +188,7 @@ class BC_split:
             data = list(self.inp_file_df.iterrows())
             with WorkerPool(n_jobs=n_jobs) as pool:
                 results = pool.map(self.__split_file, data)
-            self.__collect_stats(results)
+            self._collect_stats(results)
         else:
             try:
                 self.inp_file_df = pd.read_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
@@ -184,8 +202,8 @@ class BC_split:
     '''
     def run_serial(self, overwrite=True):
         if overwrite:
-            results = [self.__split_file(index, row) for index, row in self.inp_file_df.iterrows()]
-            self.__collect_stats(results)
+            results = [self._split_file(index, row) for index, row in self.inp_file_df.iterrows()]
+            self._collect_stats(results)
         else:
             self.inp_file_df = pd.read_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
             self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
@@ -193,7 +211,7 @@ class BC_split:
         return(self.sample_df, self.inp_file_df)
     '''
 
-    def __split_file(self, index, row):
+    def _split_file(self, index, row):
         basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
         merged_fastq_fn = '{}/{}.collapsed.bz2'.format(self.AdapterRemoval_dir_abs, basename)
         # List the barcodes and associated sample names:
@@ -214,6 +232,7 @@ class BC_split:
                 # Search for barcodes and write to barcode specific file:
                 found = False
                 for bc, sample_name, fh in bc_fh:
+                    # Old if statement compatible with random nucleotides in barcode:
                     # if all(l1==l2 for l1, l2 in zip(seq[-len(bc):], bc) if l2 != 'N'):
                     if jellyfish.hamming_distance(seq[-len(bc):], bc) <= self.max_dist:
                         found = True
@@ -236,7 +255,7 @@ class BC_split:
         unmapped_fh.close()
         return(basename, Nmapped, Nunmapped, Ncc, Ncca, Ntot)
 
-    def __collect_stats(self, results):
+    def _collect_stats(self, results):
         # Unfold the results output:
         Ncc_union = dict()
         Ncca_union = dict()
@@ -284,16 +303,21 @@ class BC_split:
 
 class Kmer_analysis:
     '''
-    This class is used to find Kmers at the end of unmapped reads,
+    Class to find Kmers at the end of unmapped reads,
     in order to determine if barcode mapping was efficient.
+    Keyword arguments:
+    k_size -- Kmer size (default 5)
+    overwrite -- Overwrite previous Kmer analysis folder (default True)
     '''
-    def __init__(self, dir_dict, inp_file_df, index_df, k_size=5, overwrite=True):
+    def __init__(self, dir_dict, inp_file_df, index_df, \
+                 k_size=5, overwrite=True):
         # Input:
         self.inp_file_df, self.k_size = inp_file_df, k_size
         self.dir_dict = dir_dict
 
         self.index_dict = dict()
-        for t, i, s in zip(index_df['type'].values, index_df['id'].values, index_df['sequence'].values):
+        for t, i, s in zip(index_df['type'].values, index_df['id'].values, \
+                           index_df['sequence'].values):
             if t not in self.index_dict:
                 self.index_dict[t] = dict()
             self.index_dict[t][i] = s
@@ -301,7 +325,9 @@ class Kmer_analysis:
         self.filter_dict = dict()
         
         # Check files exists before starting:
-        self.BC_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['BC_dir'])
+        self.BC_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], \
+                                            self.dir_dict['data_dir'], \
+                                            self.dir_dict['BC_dir'])
         for _, row in self.inp_file_df.iterrows():
             basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
             unmapped_fn = '{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename)
@@ -319,20 +345,28 @@ class Kmer_analysis:
                 raise Exception('Folder exists and overwrite set to false: {}'.format(self.Kmer_dir_abs))
 
     def filter_3p_fasta(self, input_fasta, filter_search_size=7):
-        # Generate a filter composed of the Kmers contained
-        # in the last X nt. of a set of fasta sequences, e.g. human tRNA seqeunces.
+        '''
+        Generate a filter composed of the Kmers contained
+        in the last X nt. of a set of fasta sequences,
+        e.g. all human tRNA seqeunces.
+        '''
         with open(input_fasta, "r") as seq_fh:
             for seq_obj in SeqIO.parse(seq_fh, "fasta"):
-                self.filter_dict = self.__add_kmers(self.filter_dict, str(seq_obj.seq)[-filter_search_size:])
+                self.filter_dict = self._add_kmers(self.filter_dict, \
+                                                    str(seq_obj.seq)[-filter_search_size:])
 
     def filter_window_BC(self, filter_window=(0, 11)):
-        # Generate a filter composed of the Kmers contained
-        # in a window of the input barcode sequences,
-        # e.g. constant region of an adapter.
+        '''
+        Generate a filter composed of the Kmers contained
+        in a window of the input barcode sequences,
+        e.g. constant region of an adapter.
+        '''
         for bc, bc_seq in self.index_dict['barcode'].items():
-            self.filter_dict = self.__add_kmers(self.filter_dict, bc_seq[filter_window[0]:filter_window[1]])
+            self.filter_dict = self._add_kmers(self.filter_dict, \
+                                                bc_seq[filter_window[0]:filter_window[1]])
 
     def search_unmapped(self, search_size=13):
+        '''Search for Kmers of size N=search_size'''
         # Find Kmers and store in dictionary:
         k_dict_all = dict()
         for _, row in self.inp_file_df.iterrows():
@@ -342,33 +376,34 @@ class Kmer_analysis:
             with bz2.open(unmapped_fn, "rt") as unmapped_fh:
                 for title, seq, qual in FastqGeneralIterator(unmapped_fh):
                     if len(seq) >= search_size:
-                        k_dict = self.__add_kmers(k_dict, seq[-search_size:])
+                        k_dict = self._add_kmers(k_dict, seq[-search_size:])
             
-            self.__write_stats(k_dict, basename)
+            self._write_stats(k_dict, basename)
             for kmer, obs in k_dict.items():
                 try:
                     k_dict_all[kmer] += obs
                 except KeyError:
                     k_dict_all[kmer] = obs
 
-        kmer_df = self.__write_stats(k_dict_all, 'ALL', return_df=True)
+        kmer_df = self._write_stats(k_dict_all, 'ALL', return_df=True)
         return(kmer_df)
 
-    def __write_stats(self, k_dict, outp_ext, return_df=False):
+    def _write_stats(self, k_dict, outp_ext, return_df=False):
         # Rank Kmers by occurence and find closely related adapters: 
         kmer_df_dat = list()
         for kmer_seq, count in sorted(k_dict.items(), key=lambda x:x[1], reverse=True):
-            bc_min_dist, dist_min = self.__find_min_dist_bc(kmer_seq)
+            bc_min_dist, dist_min = self._find_min_dist_bc(kmer_seq)
             if dist_min < 2:
                 kmer_df_dat.append([kmer_seq, count, dist_min, bc_min_dist])
             else:
                 kmer_df_dat.append([kmer_seq, count, None, None])
-        kmer_df = pd.DataFrame(kmer_df_dat, columns=['Kmer', 'Count', 'Barcode distance', 'Barcode'])
+        kmer_df = pd.DataFrame(kmer_df_dat, columns=['Kmer', 'Count', \
+                                                     'Barcode distance', 'Barcode'])
         kmer_df.to_excel('{}/{}_unmapped-Kmer-analysis.xlsx'.format(self.Kmer_dir_abs, outp_ext))
         if return_df:
             return(kmer_df)
 
-    def __add_kmers(self, k_dict, seq):
+    def _add_kmers(self, k_dict, seq):
         '''Find Kmers in input sequence and add to dictionary if not filtered.'''
         for i in range(len(seq) - self.k_size + 1):
             kmer = seq[i:(i+self.k_size)]
@@ -379,7 +414,7 @@ class Kmer_analysis:
                     k_dict[kmer] = 1
         return(k_dict)
 
-    def __find_min_dist_bc(self, kmer_seq):
+    def _find_min_dist_bc(self, kmer_seq):
         '''Search for the Kmers in the adapter sequences.'''
         dist_min = 999
         bc_min_dist = ''
@@ -396,10 +431,14 @@ class Kmer_analysis:
 
 class BC_analysis:
     '''
-    This class is used to find barcodes at the end of unmapped reads,
+    Class to find barcodes at the end of unmapped reads,
     in order to determine if barcode mapping was efficient.
+    Keyword arguments:
+    BC_size_3p -- Length of the barcode sequence to extract from the 3p end of each barcode in index_df (default 5)
+    overwrite -- Overwrite previous barcode analysis folder (default True)
     '''
-    def __init__(self, dir_dict, inp_file_df, index_df, BC_size_3p=5, overwrite=True):
+    def __init__(self, dir_dict, inp_file_df, index_df, \
+                 BC_size_3p=5, overwrite=True):
         # Input:
         self.inp_file_df, self.BC_size_3p = inp_file_df, BC_size_3p
         self.dir_dict = dir_dict
@@ -413,7 +452,9 @@ class BC_analysis:
         self.bc2name = {seq[-self.BC_size_3p:]: name for name, seq in self.index_dict['barcode'].items()}
         
         # Check files exists before starting:
-        self.BC_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['BC_dir'])
+        self.BC_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], \
+                                            self.dir_dict['data_dir'], \
+                                            self.dir_dict['BC_dir'])
         for _, row in self.inp_file_df.iterrows():
             basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
             unmapped_fn = '{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename)
@@ -430,7 +471,15 @@ class BC_analysis:
             else:
                 print('Using existing folder because overwrite set to false: {}'.format(self.BCanalysis_dir_abs))
 
-    def search_unmapped(self, search_size=13, group_dist=1, load_previous=False):
+    def search_unmapped(self, search_size=13, group_dist=1, \
+                        load_previous=False):
+        '''
+        Submit search for barcodes in unmapped reads.
+        Keyword arguments:
+        search_size -- Distance from the 3p of the read to search within (default 13)
+        group_dist -- Group distance smaller than or equal to in aggregated output file (default 1)
+        load_previous -- Attempt to load results from a previous barcode search by looking up the X_unmapped-BC-analysis.xlsx results file (default False)
+        '''
         if load_previous:
             self.sum_df = pd.read_excel('{}/{}{}_unmapped-BC-analysis.xlsx'.format(self.BCanalysis_dir_abs, 'ALL-groupby-dist-', group_dist), index_col=0)
             print('Loaded results from previous run... Not running barcode analysis.')
@@ -445,14 +494,14 @@ class BC_analysis:
             with bz2.open(unmapped_fn, "rt") as unmapped_fh:
                 for title, seq, qual in FastqGeneralIterator(unmapped_fh):
                     if len(seq) >= search_size:
-                        seq_min_dist, bc_min_dist, dist_min = self.__find_min_dist_bc(seq[-search_size:])
+                        seq_min_dist, bc_min_dist, dist_min = self._find_min_dist_bc(seq[-search_size:])
                         seq_dist = seq_min_dist + '-' + str(dist_min)
                         try:
                             k_dict[bc_min_dist][seq_dist] += 1
                         except KeyError:
                             k_dict[bc_min_dist][seq_dist] = 1
             # Write stats for file:
-            self.__write_stats(k_dict, basename)
+            self._write_stats(k_dict, basename)
             # Collect stats for all files:
             for bc in self.bc_list:
                 for dist, obs in k_dict[bc].items():
@@ -462,14 +511,14 @@ class BC_analysis:
                         k_dict_all[bc][dist] = obs
 
         # Write stats for all files:
-        self.bc_df = self.__write_stats(k_dict_all, 'ALL', return_df=True)
+        self.bc_df = self._write_stats(k_dict_all, 'ALL', return_df=True)
         # Group by barcode name and make total count:
         mask = self.bc_df['Distance'] <= group_dist
         self.sum_df = self.bc_df.loc[mask, ['Name', 'Count']].groupby('Name').sum().sort_values(by=['Count'], ascending=False).reset_index()
         self.sum_df.to_excel('{}/{}{}_unmapped-BC-analysis.xlsx'.format(self.BCanalysis_dir_abs, 'ALL-groupby-dist-', group_dist))
         return(self.sum_df)
 
-    def __write_stats(self, k_dict, outp_ext, return_df=False):
+    def _write_stats(self, k_dict, outp_ext, return_df=False):
         # Rank barcodes by occurence and write stats to Excel file:
         kmer_df_dat = list()
         for bc in self.bc_list:
@@ -484,7 +533,7 @@ class BC_analysis:
         if return_df:
             return(bc_df)
 
-    def __find_min_dist_bc(self, seq):
+    def _find_min_dist_bc(self, seq):
         '''Search for the closest barcode sequence.'''
         dist_min = 999
         seq_min_dist = ''
@@ -501,30 +550,14 @@ class BC_analysis:
 
 
 
-
 class UMI_trim:
     '''
-    This class is used to trim off the UMI from each read
-    and add it to the fasta header.
-    
-    The number of observed unique UMIs is also a benchmark of the
-    input amount and potential PCR amplification bias.
-    Assuming no bias in the random nucleotide incorporation rate in the oligo used
-    (which according to IDT is not exactly a perfect assumption, but nevertheless)
-    and assuming no amplification bias (again not a perfect assumption),
-    the expected number of unique UMIs (E_X) can be calculated from the number
-    of possible UMIs (n) and the number of random draws (k).
-    An explanation can be read here:
-    https://stats.stackexchange.com/questions/296005/the-expected-number-of-unique-elements-drawn-with-replacement
-    The formula used to calculate the expected number of unique UMIs:
-    E_X = n*(1-((n-1) / n)**k)
-    Where k = is the number of sequences (draws)
-    and n = to the number of possible UMIs (bins)
-    
-    Given imperfect assumptions about random oligo nucleotides and
-    PCR bias it will be expected that the number observed unique UMIs
-    is lower than the expected number of unique UMI.
-    How much lower, is a usefull metric reported in the stats.
+    Class to trim off the UMI from each read,
+    add it to the fasta header and generate statistics
+    on the UMI use.
+    Keyword arguments:
+    UMI_end -- Set of nucleotides posible on the last UMI position (default {'T', 'C'})
+    overwrite_dir -- Overwrite previous UMI trim folder (default False)
     '''
     def __init__(self, dir_dict, sample_df, UMI_end={'T', 'C'}, \
                  overwrite_dir=False):
@@ -547,9 +580,9 @@ class UMI_trim:
             assert(os.path.exists(mapped_fn))
 
         # Make output folder:
-        self.__make_dir(overwrite_dir)
+        self._make_dir(overwrite_dir)
 
-    def __make_dir(self, overwrite):
+    def _make_dir(self, overwrite):
         # Create folder for files:
         self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
         try:
@@ -562,12 +595,18 @@ class UMI_trim:
                 print('Using existing folder because overwrite set to false: {}'.format(self.UMI_dir_abs))
 
     def run_parallel(self, n_jobs=4, load_previous=False):
+        '''
+        Submit files for UMI trimming.
+        Keyword arguments:
+        n_jobs -- Number of subprocesses to be started in parallel (default 4)
+        load_previous -- Attempt to load results from a previous UMI trim by looking up sample_stats.xlsx (default False)
+        '''
         if load_previous is False:
             # Run parallel:
             data = list(self.sample_df.iterrows())
             with WorkerPool(n_jobs=n_jobs) as pool:
                 results = pool.map(self.__trim_file, data)
-            self.__collect_stats(results)
+            self._collect_stats(results)
         else:
             try:
                 self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs), index_col=0)
@@ -580,14 +619,14 @@ class UMI_trim:
     '''
     def run_serial(self, overwrite=True):
         if overwrite:
-            results = [self.__trim_file(index, row) for index, row in self.sample_df.iterrows()]
-            self.__collect_stats(results)
+            results = [self._trim_file(index, row) for index, row in self.sample_df.iterrows()]
+            self._collect_stats(results)
         else:
             self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs), index_col=0)
         return(self.sample_df)
     '''
     
-    def __trim_file(self, index, row):
+    def _trim_file(self, index, row):
         input_fnam = '{}/{}.fastq.bz2'.format(self.BC_dir_abs, row['sample_name_unique'])
         output_fnam = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
         output_fnam_untrimmed = '{}/{}_untrimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
@@ -616,7 +655,7 @@ class UMI_trim:
         N_umi_exp = self.n_bins*(1-((self.n_bins-1) / self.n_bins)**Nseqs)
         return([row['sample_name_unique'], Nseqs, N_umi_obs, N_umi_exp])
 
-    def __collect_stats(self, results):
+    def _collect_stats(self, results):
         # Stats to dataframe:
         stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_after_trim', 'N_UMI_observed', 'N_UMI_expected'])
         # Merge stats with sample info dataframe:

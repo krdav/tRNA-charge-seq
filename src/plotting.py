@@ -1,11 +1,11 @@
-import sys, os, shutil, bz2, warnings, copy, contextlib
+import os, shutil, bz2, warnings, copy, contextlib
 import Bio.Data.CodonTable
 import pandas as pd
 import numpy as np
 from mpire import WorkerPool
 from Bio import Align
 
-### Plotting imports ###
+### Plotting imports and settings ###
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
@@ -21,18 +21,16 @@ sns.set_context("talk")
 
 
 
-def freq2ratio(freq):
-    return(freq / (1 - freq))
-
-def ratio2freq(ratio):
-    return(ratio / (ratio + 1))
-
-
 class TRNA_plot:
     '''
-    This class is used to generate some standard plots
+    Class to generate some standard plots
     from the tRNAseq data such as charge per codon,
     read per million (RPM) etc.
+    Keyword arguments:
+    sample_df -- sample_df pandas dataframe. Can also be pulled from default location (default None)
+    pull_default -- Pull sample_df from default location in the alignment folder
+    stats_fnam -- Filename for the aggregated stats csv file made during stats collection. If None is specified trying to look it up in the stats collection dir under ALL_stats_aggregate.csv (default None)
+    overwrite_dir -- Overwrite old plotting folder if any exists (default False)
     '''
     def __init__(self, dir_dict, sample_df=None, stats_fnam=None, \
                  pull_default=False, overwrite_dir=False):
@@ -60,11 +58,10 @@ class TRNA_plot:
         self.charge_filt = dict()
 
         self.stats_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['stats_dir'])
-        self.align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
-        self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
         # Attempt to load sample_df from default path:
         if pull_default:
-            sample_df_path = '{}/{}'.format(self.align_dir_abs, 'sample_stats.xlsx')
+            align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
+            sample_df_path = '{}/{}'.format(align_dir_abs, 'sample_stats.xlsx')
             if os.path.isfile(sample_df_path):
                 sample_df = pd.read_excel(sample_df_path, index_col=0)
             else:
@@ -126,9 +123,9 @@ class TRNA_plot:
         self.all_stats['AA_letter'] = aa_letters
 
         # Make output folder:
-        self.__make_dir(overwrite_dir)
+        self._make_dir(overwrite_dir)
 
-    def __make_dir(self, overwrite):
+    def _make_dir(self, overwrite):
         # Create folder for files:
         self.plotting_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['plotting_dir'])
         try:
@@ -141,6 +138,7 @@ class TRNA_plot:
                 print('Folder exists and overwrite set to false... Doing nothing.')
 
     def get_charge_df(self):
+        '''Probably put this under __init__'''
         # Filter and group to only extract rows
         # valid for charge determination:
         stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', \
@@ -154,7 +152,10 @@ class TRNA_plot:
 
         # Count A/C endings:
         ac_dict = dict()
-        for snu, tan, _3nt, count in zip(all_stats_filt['sample_name_unique'], all_stats_filt['tRNA_annotation'], all_stats_filt['align_3p_nt'], all_stats_filt['count']):
+        for snu, tan, _3nt, count in zip(all_stats_filt['sample_name_unique'], \
+                                         all_stats_filt['tRNA_annotation'], \
+                                         all_stats_filt['align_3p_nt'], \
+                                         all_stats_filt['count']):
             key = (snu, tan)
             if key in ac_dict:
                 ac_dict[key][_3nt] = count
@@ -204,24 +205,43 @@ class TRNA_plot:
 
         # Filter and group by same amino acid:
         aa_mask = charge_df['single_aa']
-        charge_df_aa = charge_df[aa_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'amino_acid', 'AA_letter', 'mito_codon', 'Ecoli_ctr'], as_index=False).agg({"count": "sum", "A_count": "sum", "C_count": "sum", "RPM": "sum"}).reset_index(drop=True)
+        charge_df_aa = charge_df[aa_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', \
+                                                   'barcode', 'amino_acid', 'AA_letter', 'mito_codon', \
+                                                   'Ecoli_ctr'], as_index=False).agg({"count": "sum", \
+                                                                                      "A_count": "sum", \
+                                                                                      "C_count": "sum", \
+                                                                                      "RPM": "sum"}).reset_index(drop=True)
         charge_df_aa['charge'] = 100 * charge_df_aa['A_count'] / charge_df_aa['count']
         self.charge_filt['aa'] = charge_df_aa
 
         # Filter and group by same codon:
         cd_mask = charge_df['single_codon']
-        charge_df_cd = charge_df[cd_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'codon', 'anticodon', 'AA_codon', 'amino_acid', 'AA_letter', 'mito_codon', 'Ecoli_ctr'], as_index=False).agg({"count": "sum", "A_count": "sum", "C_count": "sum", "RPM": "sum"}).reset_index(drop=True)
+        charge_df_cd = charge_df[cd_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', \
+                                                   'barcode', 'codon', 'anticodon', 'AA_codon', \
+                                                   'amino_acid', 'AA_letter', 'mito_codon', \
+                                                   'Ecoli_ctr'], as_index=False).agg({"count": "sum", \
+                                                                                      "A_count": "sum", \
+                                                                                      "C_count": "sum", \
+                                                                                      "RPM": "sum"}).reset_index(drop=True)
         charge_df_cd['charge'] = 100 * charge_df_cd['A_count'] / charge_df_cd['count']
         self.charge_filt['codon'] = charge_df_cd
 
         # Filter and group by same transcript:
         tr_mask = charge_df['unique_annotation']
-        charge_df_tr = charge_df[tr_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', 'tRNA_anno_short', 'tRNA_annotation_len', 'codon', 'anticodon', 'AA_codon', 'amino_acid', 'AA_letter', 'mito_codon', 'Ecoli_ctr'], as_index=False).agg({"count": "sum", "A_count": "sum", "C_count": "sum", "RPM": "sum"}).reset_index(drop=True)
+        charge_df_tr = charge_df[tr_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', \
+                                                   'barcode', 'tRNA_annotation', 'tRNA_anno_short', \
+                                                   'tRNA_annotation_len', 'codon', 'anticodon', 'AA_codon', \
+                                                   'amino_acid', 'AA_letter', 'mito_codon', \
+                                                   'Ecoli_ctr'], as_index=False).agg({"count": "sum", \
+                                                                                      "A_count": "sum", \
+                                                                                      "C_count": "sum", \
+                                                                                      "RPM": "sum"}).reset_index(drop=True)
         charge_df_tr['charge'] = 100 * charge_df_tr['A_count'] / charge_df_tr['count']
         self.charge_filt['tr'] = charge_df_tr
         self.charge_df = charge_df
 
     def write_charge_df(self, fnam='charge_df.csv'):
+        '''qwerty'''
         fnam_abs = '{}/{}.pdf'.format(self.plotting_dir_abs, fnam)
         if self.charge_df is None:
             self.get_charge_df()
@@ -604,11 +624,11 @@ class TRNA_plot:
             results = pool.map(self.__collect_no_temp_mat, data)
 
         # Make logo:
-        self.__run_logomaker(results, plot_name)
+        self._run_logomaker(results, plot_name)
         # Also make it as log10 transformed:
-        self.__run_logomaker(results, plot_name, log10=True)
+        self._run_logomaker(results, plot_name, log10=True)
 
-    def __collect_no_temp_mat(self, index, row):
+    def _collect_no_temp_mat(self, index, row):
         if self.verbose:
             print('  {}'.format(row['sample_name_unique']), end='')
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
@@ -654,9 +674,9 @@ class TRNA_plot:
         data = list(self.sample_df.iterrows())
         with WorkerPool(n_jobs=n_jobs) as pool:
             results = pool.map(self.__collect_UMI_mat, data)
-        self.__run_logomaker(results, plot_name)
+        self._run_logomaker(results, plot_name)
 
-    def __collect_UMI_mat(self, index, row):
+    def _collect_UMI_mat(self, index, row):
         if self.verbose:
             print('  {}'.format(row['sample_name_unique']), end='')
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
@@ -674,7 +694,7 @@ class TRNA_plot:
 
         return([counts_mat, title])
 
-    def __run_logomaker(self, plot_data, plot_name, log10=False):
+    def _run_logomaker(self, plot_data, plot_name, log10=False):
         if self.verbose:
             print('\nNow plotting logo plot.', end='')
         if log10:
@@ -839,7 +859,7 @@ class TRNA_plot:
                     pass
                     # print(err)
 
-    def __collect_coverage_data(self, index, row):
+    def _collect_coverage_data(self, index, row):
         print('  {}'.format(row['sample_name_unique']), end='')
         # Read data and add necessary columns:
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
@@ -946,5 +966,13 @@ class TRNA_plot:
         return([cov_count_sum, aa_ordered_list, title_info])
 
 
+
+def freq2ratio(freq):
+    '''Convert frequency to ratio.'''
+    return(freq / (1 - freq))
+
+def ratio2freq(ratio):
+    '''Convert ratio to frequency.'''
+    return(ratio / (ratio + 1))
 
 

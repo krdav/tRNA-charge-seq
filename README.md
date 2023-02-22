@@ -16,8 +16,15 @@ Dependencies (Python packages):
 * pandas
 * Biopython
 * numpy
+* scipy
 * seaborn
 * matplotlib
+* mpire
+* jellyfish
+* json_stream
+* logomaker
+Using some newer functions in numpy, so be aware to update python packages.
+
 
 
 For makeblastdb install the command line BLAST tools:
@@ -27,7 +34,7 @@ https://www.ncbi.nlm.nih.gov/books/NBK569861/#intro_Installation
 Only tested on Linux and MacOS.
 
 
-Using some newer functions in numpy, so be aware to update python packages.
+
 
 
 

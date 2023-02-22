@@ -1,12 +1,11 @@
-import sys, os, shutil, bz2, random, copy
+import os, shutil, bz2, random, copy
 from Bio import SeqIO
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
-import pandas as pd
-import numpy as np
 
 
 
 def sample_df_to_dict(sample_df):
+    '''Reads sample_df into dict with sample_name_unique keys.'''
     sample_dict = dict()
     for index, row in sample_df.iterrows():
         sample_dict[row['sample_name_unique']] = {
@@ -23,7 +22,10 @@ def anticodon2codon(anticodon):
     return(codon)
 
 def read_tRNAdb_info(tRNA_database):
-    # Read the tRNA database to find the length of each sequence:
+    '''
+    Read the tRNA database and put seq info 
+    (seq len, codon, amino acid) into a dict.
+    '''
     tRNA_data = dict()
     for species in tRNA_database:
         for record in SeqIO.parse(tRNA_database[species], "fasta"):
@@ -35,9 +37,11 @@ def read_tRNAdb_info(tRNA_database):
     return(tRNA_data)
 
 def index_to_sample_df(sample_df, index_df):
+    '''Add index sequences to sample_df.'''
     # Read index sequences into dict:
     index_dict = dict()
-    for t, i, s in zip(index_df['type'].values, index_df['id'].values, index_df['sequence'].values):
+    for t, i, s in zip(index_df['type'].values, index_df['id'].values, \
+                       index_df['sequence'].values):
         if t not in index_dict:
             index_dict[t] = dict()
         index_dict[t][i] = s
@@ -51,9 +55,14 @@ def index_to_sample_df(sample_df, index_df):
 def downsample_raw_input(sample_df, inp_file_df, NBdir, data_dir, seq_dir, \
                          downsample_absolute=False, downsample_fold=False, overwrite=True):
     '''
-    This functions provides a way of downsampling the input files
+    This function provides a way of downsampling the input files
     before read processing. This enables the user to test the entire
     sample processing pipeline at a 100 or 1000 fold reduced time.
+
+    Keyword arguments:
+    downsample_absolute -- Downsample by taking N sequences from the top of each mate pair file (fast, non-random)
+    downsample_fold -- Downsample by taking sequences from each mate pair with a probability of 1/N (slow, random)
+    overwrite -- Overwrite previous results with same downsampling parameters
     '''
     inp_file_df = copy.deepcopy(inp_file_df)
     # Check files exists before starting:
@@ -69,6 +78,9 @@ def downsample_raw_input(sample_df, inp_file_df, NBdir, data_dir, seq_dir, \
         DS_ext = '_DSA-{}k'.format(round(downsample_absolute // 1000))
     elif downsample_fold:
         DS_ext = '_DSF-{}'.format(round(downsample_fold))
+    else:
+        raise Exception('Either set downsample_absolute or downsample_fold. \
+                         Both are False.')
     DS_dir = seq_dir + DS_ext
 
     # Create folder for files:
@@ -131,32 +143,19 @@ def downsample_raw_input(sample_df, inp_file_df, NBdir, data_dir, seq_dir, \
     inp_file_df = inp_file_df.drop(columns=cols[0:2]).rename(columns={cols[2]: cols[0], cols[3]: cols[1]})
     return(sample_df, inp_file_df, DS_dir)
 
-def fast_fasta_count(filename):
-    '''See: https://stackoverflow.com/a/9631635'''
+def fast_fasta_count(filename, bzip=False):
+    '''Fast Python implementation of counting Fasta file entries.'''
+    # See: https://stackoverflow.com/a/9631635
     def blocks(files, size=65536):
         while True:
             b = files.read(size)
             if not b: break
             yield b
-
-    with open(filename, "r", encoding="utf-8", errors='ignore') as f:
-        return(sum(bl.count(">") for bl in blocks(f)))
-
-def fast_fastq_count_bz(filename):
-    '''See: https://stackoverflow.com/a/9631635'''
-    def blocks(files, size=65536):
-        while True:
-            b = files.read(size)
-            if not b: break
-            yield b
-
-    with bz2.open(filename, 'rt', encoding="utf-8", errors='ignore') as f:
-        return(sum(bl.count("@") for bl in blocks(f)))
-
-
-
-
-
-
+    if bzip:
+        with bz2.open(filename, 'rt', encoding="utf-8", errors='ignore') as f:
+            return(sum(bl.count("@") for bl in blocks(f)))
+    else:
+        with open(filename, "r", encoding="utf-8", errors='ignore') as f:
+            return(sum(bl.count(">") for bl in blocks(f)))
 
 
