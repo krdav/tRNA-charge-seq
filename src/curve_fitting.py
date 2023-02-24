@@ -15,6 +15,11 @@ def loss_func_l2(t, y):
     return((y - t)**2)     # l2
 
 
+def find_nearest4(array, value):
+    idx = (np.abs(array-value)).argmin()
+    return(idx)
+
+
 def bootstrap_hl(df, Ndraws=1000, ci=95, BFGS_loss_func=loss_func_l2, \
                  lstsq=False, log_min=0.001, minus_N_bz=False):
     '''
@@ -52,17 +57,21 @@ def bootstrap_hl(df, Ndraws=1000, ci=95, BFGS_loss_func=loss_func_l2, \
     mean = np.zeros(len(ch_dat))
     # Input in order: charge at t=0 in percent,
     # half-life in minutes, charge lower asymptote
-    bnds = ((0, 100), (1, 1e5), (0, 5))
+    bnds = ((0, 100), (1, 1e5), (0, 2.5))
     guess = (100, 500, 1)
     for i, t in enumerate(time_arr):
         mean[i] = np.mean(ch_dat[t])
     def fun_hl_bsl(p): return(obj_hl_bsl_fit(BFGS_loss_func, mean, time_arr, p))
     p_hl_bsl = minimize(fun_hl_bsl, guess, method='L-BFGS-B', bounds=bnds)
+    N0 = p_hl_bsl.x[0]
     hl_p_est = p_hl_bsl.x[1]
+    Ninf = p_hl_bsl.x[2]
+    residual = p_hl_bsl.fun
 
     # Perform bootstrapping either via. the least-squares
     # method or L-BFGS-B fitting. Perform Ndraws trials:
     hl_bstrp = np.zeros(Ndraws)
+    param_bstrp = list()
     if lstsq:
         # Insert dummy variable of ones to fit intercept
         # i.e. charge a t=0:
@@ -79,19 +88,21 @@ def bootstrap_hl(df, Ndraws=1000, ci=95, BFGS_loss_func=loss_func_l2, \
                 else:
                     draw[i] = np.random.choice(ch_dat[t], 1)
             # Enforce minimum charge values:
-            draw_Ninf = draw-p_hl_bsl.x[2]
+            draw_Ninf = draw-Ninf
             draw_Ninf[draw_Ninf < log_min] = log_min
             # Least-squares fit:
-            sol, res = nnls(A, np.log2(draw_Ninf))
+            sol, residual = nnls(A, np.log2(draw_Ninf))
             # Extract the half-life:
             hl_bstrp[boot_rep] = 1/sol[0]
+            param_bstrp.append((2**sol[1], 1/sol[0], Ninf))
         # Overwrite point estimate to reflect
         # the loss function is least-squares on
         # log transformed data:
-        draw_Ninf = mean-p_hl_bsl.x[2]
+        draw_Ninf = mean-Ninf
         draw_Ninf[draw_Ninf < 0] = log_min
-        sol, res = nnls(A, np.log2(draw_Ninf))
+        sol, residual = nnls(A, np.log2(draw_Ninf))
         hl_p_est = 1/sol[0]
+        N0 = 2**sol[1]
     else:
         draw = np.zeros(len(ch_dat))
         for boot_rep in range(Ndraws):
@@ -108,12 +119,15 @@ def bootstrap_hl(df, Ndraws=1000, ci=95, BFGS_loss_func=loss_func_l2, \
             def fun_hl_bsl(p): return(obj_hl_bsl_fit(BFGS_loss_func, draw, time_arr, p))
             p_hl_bsl = minimize(fun_hl_bsl, guess, method='L-BFGS-B', bounds=bnds)
             hl_bstrp[boot_rep] = p_hl_bsl.x[1]
+            param_bstrp.append((p_hl_bsl.x[0], p_hl_bsl.x[1], p_hl_bsl.x[2]))
     # Find confidence interval:
     q_bot = (100-ci)/2
     q_top = 100-(100-ci)/2
     hl_ci = np.percentile(hl_bstrp, (q_bot, q_top))
+    ci_param_idx = (find_nearest4(hl_bstrp, hl_ci[0]), find_nearest4(hl_bstrp, hl_ci[1]))
+    ci_param = (param_bstrp[ci_param_idx[0]], param_bstrp[ci_param_idx[1]])
     
-    return(hl_p_est, hl_ci)
+    return(residual, (N0, hl_p_est, Ninf), ci_param)
 
 
 def bootstrap_hl_fast(df, Ndraws=10000, ci=95, BFGS_loss_func=loss_func_l2, \
@@ -154,7 +168,7 @@ def bootstrap_hl_fast(df, Ndraws=10000, ci=95, BFGS_loss_func=loss_func_l2, \
         ch_mat[i, :] = ch_dat[t]
     
     mean = ch_mat.mean(1)
-    bnds = ((0, 100), (1, 1e5), (0, 5))
+    bnds = ((0, 100), (1, 1e5), (0, 2.5))
     guess = (100, 500, 1)
     for i, t in enumerate(time_arr):
         mean[i] = np.mean(ch_dat[t])
