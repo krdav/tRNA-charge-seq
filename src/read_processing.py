@@ -1,4 +1,4 @@
-import os, shutil, bz2, resource
+import os, shutil, bz2, resource, re
 from subprocess import Popen, PIPE, STDOUT
 from Bio import SeqIO
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
@@ -86,7 +86,7 @@ class AR_merge:
 
     def _start_AR(self, index, row):
         AR_cmd = self.AR_cmd_tmp.copy()
-        basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+        basename = '-'.join(re.split('[_/]', row['fastq_mate1_filename'])[:-1])
         # Check if output exists, and skip if not overwrite:
         merged_fastq_fn = '{}.collapsed.bz2'.format(basename)
         log_fn = '{}_logfile.txt'.format(basename)
@@ -118,7 +118,7 @@ class AR_merge:
         N_pairs = list()
         N_merged = list()
         for _, row in self.inp_file_df.iterrows():
-            basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+            basename = '-'.join(re.split('[_/]', row['fastq_mate1_filename'])[:-1])
             with open('{}.settings'.format(basename), 'r') as fh:
                 for line in fh:
                     if 'Total number of read pairs:' in line:
@@ -149,7 +149,7 @@ class BC_split:
         # Check files exists before starting:
         self.AdapterRemoval_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['AdapterRemoval_dir'])
         for _, row in self.inp_file_df.iterrows(): # Pull out each merged fastq file
-            basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+            basename = '-'.join(re.split('[_/]', row['fastq_mate1_filename'])[:-1])
             merged_fastq_fn = '{}/{}.collapsed.bz2'.format(self.AdapterRemoval_dir_abs, basename)
             assert(os.path.exists(merged_fastq_fn))
         
@@ -212,10 +212,12 @@ class BC_split:
     '''
 
     def _split_file(self, index, row):
-        basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+        basename = '-'.join(re.split('[_/]', row['fastq_mate1_filename'])[:-1])
         merged_fastq_fn = '{}/{}.collapsed.bz2'.format(self.AdapterRemoval_dir_abs, basename)
         # List the barcodes and associated sample names:
-        mask = (self.sample_df['P5_index'] == row['P5_index']) & (self.sample_df['P7_index'] == row['P7_index'])
+        mask = (self.sample_df['fastq_mate1_filename'] == row['fastq_mate1_filename']) & (self.sample_df['fastq_mate2_filename'] == row['fastq_mate2_filename'])
+        assert(len({snu for snu in self.sample_df[mask]['sample_name_unique'].values}) == len(self.sample_df[mask]))
+        assert(len({snu for snu in self.sample_df[mask]['barcode_seq'].values}) == len(self.sample_df[mask]))
         bc_fh = [(k, v, bz2.open('{}/{}.fastq.bz2'.format(self.BC_dir_abs, v), "wt")) for k, v in zip(self.sample_df[mask]['barcode_seq'].values, self.sample_df[mask]['sample_name_unique'].values)]
         unmapped_fh = bz2.open('{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename), "wt")
 
@@ -274,7 +276,7 @@ class BC_split:
         Nmapped_list = list()
         Nunmapped_list = list()
         for _, row in self.inp_file_df.iterrows():
-            basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+            basename = '-'.join(re.split('[_/]', row['fastq_mate1_filename'])[:-1])
             Nmapped_list.append(Nmapped_dict[basename])
             Nunmapped_list.append(Nunmapped_dict[basename])
 
@@ -329,7 +331,7 @@ class Kmer_analysis:
                                             self.dir_dict['data_dir'], \
                                             self.dir_dict['BC_dir'])
         for _, row in self.inp_file_df.iterrows():
-            basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+            basename = '-'.join(re.split('[_/]', row['fastq_mate1_filename'])[:-1])
             unmapped_fn = '{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename)
             assert(os.path.exists(unmapped_fn))
 
@@ -371,7 +373,7 @@ class Kmer_analysis:
         k_dict_all = dict()
         for _, row in self.inp_file_df.iterrows():
             k_dict = dict()
-            basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+            basename = '-'.join(re.split('[_/]', row['fastq_mate1_filename'])[:-1])
             unmapped_fn = '{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename)
             with bz2.open(unmapped_fn, "rt") as unmapped_fh:
                 for title, seq, qual in FastqGeneralIterator(unmapped_fh):
@@ -456,7 +458,7 @@ class BC_analysis:
                                             self.dir_dict['data_dir'], \
                                             self.dir_dict['BC_dir'])
         for _, row in self.inp_file_df.iterrows():
-            basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+            basename = '-'.join(re.split('[_/]', row['fastq_mate1_filename'])[:-1])
             unmapped_fn = '{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename)
             assert(os.path.exists(unmapped_fn))
 
@@ -489,7 +491,7 @@ class BC_analysis:
         k_dict_all = {bc: {} for bc in self.bc_list}
         for _, row in self.inp_file_df.iterrows():
             k_dict = {bc: {} for bc in self.bc_list}
-            basename = '{}-{}'.format(row['P5_index'], row['P7_index'])
+            basename = '-'.join(re.split('[_/]', row['fastq_mate1_filename'])[:-1])
             unmapped_fn = '{}/{}_unmapped.fastq.bz2'.format(self.BC_dir_abs, basename)
             with bz2.open(unmapped_fn, "rt") as unmapped_fh:
                 for title, seq, qual in FastqGeneralIterator(unmapped_fh):
