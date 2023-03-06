@@ -169,10 +169,8 @@ class STATS_collection:
                 # The last two strings are the adapter sequence and the UMI:
                 _3p_bc, _5p_umi = UMIread.description.split()[-1].split(':')[-2:]
                 seq = str(UMIread.seq)
-                UMI_info[UMIread.id] = {
-                    '_5p_umi': _5p_umi,
-                    'seq': seq
-                }
+                readID = str(UMIread.id)
+                UMI_info[readID] = (_5p_umi, seq)
 
         # Open the alignment results:
         SWres_fnam = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
@@ -212,13 +210,12 @@ class STATS_collection:
 
                 # Extract non-template bases from UMI processed reads:
                 try:
-                    readUMI = UMI_info[readID]
+                    _5p_umi, read_seq = UMI_info.pop(readID)
                 except KeyError:
                     raise Exception('Read ID ({}) not found among UMI trimmed sequences. Did any of the fastq headers change such that there is a mismatch between headers in the alignment json and those in the trimmed UMIs?'.format(readID))
                 qpos = align_dict['qpos'][0]
-                _5p_non_temp = readUMI['seq'][0:(qpos[0]-1)]
-                _3p_non_temp = readUMI['seq'][qpos[1]:]
-                _5p_umi = readUMI['_5p_umi']
+                _5p_non_temp = read_seq[0:(qpos[0]-1)]
+                _3p_non_temp = read_seq[qpos[1]:]
                 _3p_bc = row['barcode_seq']
                 # For "non-common" sequences multiple reads
                 # have not been collapsed:
