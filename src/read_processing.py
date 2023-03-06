@@ -562,7 +562,7 @@ class UMI_trim:
     overwrite_dir -- Overwrite previous UMI trim folder (default False)
     '''
     def __init__(self, dir_dict, sample_df, UMI_end={'T', 'C'}, \
-                 overwrite_dir=False):
+                 overwrite_dir=False, check_input=True):
         # Calculate the number of possible UMIs,
         # 9x random nt. (A/G/T/C) and one purine (A/G)
         self.n_bins = 4**9 * 2
@@ -577,9 +577,10 @@ class UMI_trim:
 
         # Check files exists before starting:
         self.BC_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['BC_dir'])
-        for _, row in self.sample_df.iterrows():
-            mapped_fn = '{}/{}.fastq.bz2'.format(self.BC_dir_abs, row['sample_name_unique'])
-            assert(os.path.exists(mapped_fn))
+        if check_input:
+            for _, row in self.sample_df.iterrows():
+                mapped_fn = '{}/{}.fastq.bz2'.format(self.BC_dir_abs, row['sample_name_unique'])
+                assert(os.path.exists(mapped_fn))
 
         # Make output folder:
         self._make_dir(overwrite_dir)
