@@ -232,6 +232,15 @@ def obj_hl_bsl_fit(loss_func, mes, t, p):
     loss = sum(loss_func(mes, y))
     return(loss)
 
+# Linear fit allowed to be offset 0:
+def lin_fit_off(x, alpha, beta):
+    return(alpha + x*beta)
+def obj_lin_fit_off(loss_func, amt_uM, rsp_ratio, p):
+    alpha = p[0]
+    beta = p[1]
+    y = lin_fit_off(rsp_ratio, alpha, beta)
+    loss = sum(loss_func(amt_uM, y))
+    return(loss)
 
 
 
