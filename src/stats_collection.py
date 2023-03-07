@@ -16,9 +16,12 @@ class STATS_collection:
     ignore_common_count -- Ignore common count even if X_common-seq-obs.json filename exists (default False)
     check_exists -- Check if required files exist before starting. If set to False, this will ignore checking for common count (default True)
     overwrite_dir -- Overwrite old stats folder if any exists (default False)
+    check_exists -- Check if input files exist (default True)
+    UMI_SW_sorted -- Assume UMI and SW results are sorted in the same order. This gives a massive memory saving. (default True)
     '''
     def __init__(self, dir_dict, tRNA_data, sample_df, common_seqs=None, \
-                 ignore_common_count=False, check_exists=True, overwrite_dir=False):
+                 ignore_common_count=False, check_exists=True, overwrite_dir=False, \
+                 UMI_SW_sorted=True):
         self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', \
                                  'sample_name', 'replicate', 'barcode', 'tRNA_annotation', \
                                  'align_score', 'unique_annotation', 'tRNA_annotation_len', \
@@ -42,6 +45,7 @@ class STATS_collection:
         self.dir_dict = dir_dict
         self.common_seqs_fnam = common_seqs
         self.common_seqs_info = dict() # Name to sequence for common sequence
+        self.UMI_SW_sorted = UMI_SW_sorted
 
         # Check files exists before starting:
         self.align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
@@ -161,16 +165,24 @@ class STATS_collection:
         return(stats_agg_fnam)
 
     def _read_non_common(self, row, stats_fh):
-        # Extract info from UMI processed reads:
+        # UMI fastq files must be read to
+        # extract UMI and 5/3p non-template bases:
         trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
-        UMI_info = dict()
-        with bz2.open(trimmed_fn, 'rt') as fh_bz:
-            for UMIread in SeqIO.parse(fh_bz, "fastq"):
-                # The last two strings are the adapter sequence and the UMI:
-                _3p_bc, _5p_umi = UMIread.description.split()[-1].split(':')[-2:]
-                seq = str(UMIread.seq)
-                readID = str(UMIread.id)
-                UMI_info[readID] = (_5p_umi, seq)
+        if UMI_SW_sorted:
+            UMIseqs_fh = bz2.open(trimmed_fn, 'rt')
+            UMI_info_iter = SeqIO.parse(UMIseqs_fh, "fastq")
+            UMIreadID = ''
+        # If UMI and SW results are not sorted the same way,
+        # the UMI information must be read into memory:
+        else:
+            UMI_info = dict()
+            with bz2.open(trimmed_fn, 'rt') as fh_bz:
+                for UMIread in SeqIO.parse(fh_bz, "fastq"):
+                    # The last two strings are the adapter sequence and the UMI:
+                    _3p_bc, _5p_umi = UMIread.description.split()[-1].split(':')[-2:]
+                    seq = str(UMIread.seq)
+                    readID = str(UMIread.id)
+                    UMI_info[readID] = (_5p_umi, seq)
 
         # Open the alignment results:
         SWres_fnam = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
@@ -184,6 +196,19 @@ class STATS_collection:
                 # Skip reads that were not aligned:
                 if not align_dict['aligned']:
                     continue
+
+                # Extract UMI info:
+                try:
+                    if UMI_SW_sorted:
+                        while UMIreadID != readID:
+                            UMIread = next(UMI_info_iter)
+                            _3p_bc, _5p_umi = UMIread.description.split()[-1].split(':')[-2:]
+                            read_seq = str(UMIread.seq)
+                            UMIreadID = str(UMIread.id)
+                    else:
+                        _5p_umi, read_seq = UMI_info.pop(readID)
+                except:
+                    raise Exception('Read ID ({}) not found among UMI trimmed sequences. Did any of the fastq headers change such that there is a mismatch between headers in the alignment json and those in the trimmed UMIs?'.format(readID))
 
                 # Collect all the information:
                 sample_name_unique = row['sample_name_unique']
@@ -207,12 +232,6 @@ class STATS_collection:
                 amino_acid = self.tRNA_data[tRNA_annotation_first]['amino_acid']
                 _5p_cover = align_5p_idx == 1
                 _3p_cover = align_3p_idx == tRNA_annotation_len
-
-                # Extract non-template bases from UMI processed reads:
-                try:
-                    _5p_umi, read_seq = UMI_info.pop(readID)
-                except KeyError:
-                    raise Exception('Read ID ({}) not found among UMI trimmed sequences. Did any of the fastq headers change such that there is a mismatch between headers in the alignment json and those in the trimmed UMIs?'.format(readID))
                 qpos = align_dict['qpos'][0]
                 _5p_non_temp = read_seq[0:(qpos[0]-1)]
                 _3p_non_temp = read_seq[qpos[1]:]
@@ -230,10 +249,7 @@ class STATS_collection:
                 csv_line = ','.join(map(str, line_lst))
                 print(csv_line, file=stats_fh)
 
-        # Free memory from taken by "UMI_info":
-        UMI_info = None
-        del UMI_info
-        gc.collect()
+        UMIseqs_fh.close()
 
     def _read_common(self, row, stats_fh):
         # Read common sequences observations for this sample:
