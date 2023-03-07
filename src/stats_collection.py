@@ -168,7 +168,7 @@ class STATS_collection:
         # UMI fastq files must be read to
         # extract UMI and 5/3p non-template bases:
         trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
-        if UMI_SW_sorted:
+        if self.UMI_SW_sorted:
             UMIseqs_fh = bz2.open(trimmed_fn, 'rt')
             UMI_info_iter = SeqIO.parse(UMIseqs_fh, "fastq")
             UMIreadID = ''
@@ -199,7 +199,7 @@ class STATS_collection:
 
                 # Extract UMI info:
                 try:
-                    if UMI_SW_sorted:
+                    if self.UMI_SW_sorted:
                         while UMIreadID != readID:
                             UMIread = next(UMI_info_iter)
                             _3p_bc, _5p_umi = UMIread.description.split()[-1].split(':')[-2:]
