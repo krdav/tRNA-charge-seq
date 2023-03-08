@@ -1,5 +1,5 @@
 # Projects folder
-The purpose of this folder is to organize each sequencing run into a separate folder where raw and processed data can live.
-An example of such structure can be found in the folder `example`.
+Folder to organize each sequencing run or a specific analysis into separate folders where raw and processed data is stored.
+Raw data from a full sequencing run is not uploaded to Github, therefore a subsampled dataset is provided as an example in the folder `example`.
 
 
