@@ -32,7 +32,7 @@ def bootstrap_hl(df, Ndraws=1000, ci=95, BFGS_loss_func=loss_func_l2, \
     BFGS_loss_func -- Loss function used for L-BFGS-B fitting (default loss_func_l2)
     lstsq -- Use the least-squares method and its closed-form solution to fit data.
              This method is orders of magnitude faster than L-BFGS-B fitting 
-             but it uses log transformed charge values and cannot incoorporate
+             but it uses log transformed charge values and cannot incorporate
              a fitted lower asymptote. The lower asymptote is therefore pre-specified
              from a single L-BFGS-B fitting run. (default False)
     log_min -- Smallest value for the charge data. Only relevant for least-squares
@@ -242,6 +242,18 @@ def obj_lin_fit_off(loss_func, amt_uM, rsp_ratio, p):
     loss = sum(loss_func(amt_uM, y))
     return(loss)
 
-
+# Half-life function fit with two
+# species A/B and a baseline:
+def hl2_bsl_fit(t, NA0, NB0, hlA, hlB, Ninf):
+    return(NA0*(1/2)**(t/hlA)+NB0*(1/2)**(t/hlB)+Ninf)
+def obj_hl2_bsl_fit(loss_func, mes, t, p):
+    NA0 = p[0]
+    NB0 = p[1]
+    hlA = p[2]
+    hlB = p[3]
+    Ninf = p[4]
+    y = hl2_bsl_fit(t, NA0, NB0, hlA, hlB, Ninf)
+    loss = sum(loss_func(mes, y))
+    return(loss)
 
 
