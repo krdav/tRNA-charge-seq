@@ -1,0 +1,14 @@
+Both images are of the same gel.
+
+The gel was made to show RNA integrity after ended incubation time for the tRNA aminoacylation half-life samples taken over a 40h time period.
+
+Well content from left to right:
+Ladder, no incubation, rep1, rep2, rep3, rep4, no incubation, rep1, rep2, rep3, rep4
+
+With the left set of replicates loading 4 ug RNA and the right set loading 1.5 ug.
+The "no incubation" sample was taken prior to incubation and frozen and thus shows the RNA integrity before starting incubation.
+The RNA ladder used is NEB Low Range ssRNA Ladder (N0364S):
+https://www.neb.com/products/n0364-low-range-ssrna-ladder
+
+
+
