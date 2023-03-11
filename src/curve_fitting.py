@@ -57,7 +57,7 @@ def bootstrap_hl(df, Ndraws=1000, ci=95, BFGS_loss_func=loss_func_l2, \
     mean = np.zeros(len(ch_dat))
     # Input in order: charge at t=0 in percent,
     # half-life in minutes, charge lower asymptote
-    bnds = ((0, 100), (1, 1e5), (0, 2.5))
+    bnds = ((0, 100), (1, 1e5), (0, 3.5))
     guess = (100, 500, 1)
     for i, t in enumerate(time_arr):
         mean[i] = np.mean(ch_dat[t])
@@ -168,7 +168,7 @@ def bootstrap_hl_fast(df, Ndraws=10000, ci=95, BFGS_loss_func=loss_func_l2, \
         ch_mat[i, :] = ch_dat[t]
     
     mean = ch_mat.mean(1)
-    bnds = ((0, 100), (1, 1e5), (0, 2.5))
+    bnds = ((0, 100), (1, 1e5), (0, 3.5))
     guess = (100, 500, 1)
     for i, t in enumerate(time_arr):
         mean[i] = np.mean(ch_dat[t])
