@@ -1,0 +1,37 @@
+These images show the gel isolation steps of the library prep after tRNA isolation as well as the cut gel after isolation of the desired fragment.
+
+The pooled adapter barcoded tRNA samples are shown in the "tRNA_pooled.jpg".
+Well content from left to right:
+RNA ladder, P1, P2, ..., P10
+With P1, .., P10 being the tRNA pools after pooling adapter barcoded samples.
+
+
+The cDNA after RT PCR is shown in "cDNA.jpg".
+Well content from left to right:
+RNA ladder, P1, P2, ..., P10, RT no insert control
+
+The RNA ladder used is NEB Low Range ssRNA Ladder (N0364S):
+https://www.neb.com/products/n0364-low-range-ssrna-ladder
+
+
+
+The library DNA resulting from 10 cycles of PCR to attach Illumina adapters is shown in "library-PCR_10-cycles.jpg".
+Well content from left to right:
+DNA ladder, P1, P2, ..., P10
+Same order for "library-PCR_12-cycles.jpg" and "library-PCR_14-cycles.jpg" but using 12, 14 PCR cycles respectively.
+
+The library DNA after pooling and purifying the DNA from cycle 10 and 12 is shown in "library-PCR_10-12-cycles-mix.jpg".
+Well content from left to right:
+DNA ladder, P1, P2, ..., P10
+
+The DNA ladder used is Ultra Low Range DNA Ladder (10597012):
+https://www.thermofisher.com/order/catalog/product/10597012
+
+
+
+
+
+
+
+
+

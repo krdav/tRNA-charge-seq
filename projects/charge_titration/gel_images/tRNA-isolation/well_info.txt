@@ -1,0 +1,16 @@
+These images show the tRNA isolation gel from the 9 charge titration samples and the gel after being cut to isolate the tRNA fraction.
+
+Well content from left to right:
+Ladder, p100, p85, p70, p55, p40, p25, p10, p0, p0 90m, Blank, Ladder
+
+p100 = 100% intact
+p85 = 85% intact + 15% deacylated
+etc.
+p0 90m is a control sample and was not used
+
+The RNA ladder used is NEB Low Range ssRNA Ladder (N0364S):
+https://www.neb.com/products/n0364-low-range-ssrna-ladder
+
+
+
+
