@@ -1,4 +1,5 @@
 import os, shutil, bz2, random, copy
+import numpy as np
 from Bio import SeqIO
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
 
@@ -158,4 +159,9 @@ def fast_fasta_count(filename, bzip=False):
         with open(filename, "r", encoding="utf-8", errors='ignore') as f:
             return(sum(bl.count(">") for bl in blocks(f)))
 
+
+def moving_average(a, n=3):
+    ret = np.cumsum(a, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    return(ret[n - 1:] / n)
 

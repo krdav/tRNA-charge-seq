@@ -256,4 +256,21 @@ def obj_hl2_bsl_fit(loss_func, mes, t, p):
     loss = sum(loss_func(mes, y))
     return(loss)
 
+# Half-life function fit with a CC
+# correction factor and a baseline:
+def hl_ccF_bsl_fit(t, N0, hl, Ninf, F):
+    cca = N0*(1/2)**(t/hl) + Ninf
+    cc = F*(N0 - cca)
+    ch = cca/(cc+cca) * N0
+    return(ch)
+def obj_hl_ccF_bsl_fit(loss_func, mes, t, p):
+    N0 = p[0]
+    hl = p[1]
+    Ninf = p[2]
+    F = p[3]
+    y = hl_ccF_bsl_fit(t, N0, hl, Ninf, F)
+    loss = sum(loss_func(mes, y))
+    return(loss)
+
+
 
