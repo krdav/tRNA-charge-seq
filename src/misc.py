@@ -165,3 +165,13 @@ def moving_average(a, n=3):
     ret[n:] = ret[n:] - ret[:-n]
     return(ret[n - 1:] / n)
 
+def moving_std(a, n=3):
+    ret = np.cumsum(a**2, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    return(np.sqrt(ret[n - 1:] / n))
+
+def find_nearest(array, value):
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return(idx)
+
