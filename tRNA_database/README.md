@@ -41,7 +41,7 @@ Merge and format mouse:
 `./tRNAdb_tool.py mm10-mitotRNAs.fa mm10-mature-tRNAs.fa > mouse/mm10-tRNAs.fa`
 
 Merge and format Ecoli (gtrnadb puts CCA at the end of the mature Ecoli tRNAs but not the mature human tRNAs...):
-`./tRNAdb_tool_ecoli.py mm10-mitotRNAs.fa mm10-mature-tRNAs.fa > mouse/mm10-tRNAs.fa`
+`./tRNAdb_tool_ecoli.py eschColi_K_12_MG1655-mature-tRNAs.fa > ecoli/ecoli-tRNAs.fa`
 
 
 
