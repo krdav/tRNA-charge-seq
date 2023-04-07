@@ -13,6 +13,9 @@ For human:
 For mouse:  
 `wget http://gtrnadb.ucsc.edu/genomes/eukaryota/Mmusc10/mm10-mature-tRNAs.fa`
 
+For Ecoli:
+`wget http://gtrnadb.ucsc.edu/genomes/bacteria/Esch_coli_K_12_MG1655/eschColi_K_12_MG1655-mature-tRNAs.fa`
+
 
 Mitochondrial tRNAs are not so complex as the nuclear encoded ones.
 One can basically look them up on the mitochondrial genome and copy them.
@@ -36,6 +39,10 @@ Merge and format human:
 
 Merge and format mouse:  
 `./tRNAdb_tool.py mm10-mitotRNAs.fa mm10-mature-tRNAs.fa > mouse/mm10-tRNAs.fa`
+
+Merge and format Ecoli (gtrnadb puts CCA at the end of the mature Ecoli tRNAs but not the mature human tRNAs...):
+`./tRNAdb_tool_ecoli.py mm10-mitotRNAs.fa mm10-mature-tRNAs.fa > mouse/mm10-tRNAs.fa`
+
 
 
 ### Make BLAST database for SWIPE
