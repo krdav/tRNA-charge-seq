@@ -491,6 +491,9 @@ class TM_analysis:
 
         # Keep track of the samples requested
         # to warn if any was not found:
+        # Get the mutations combined for the requested samples:
+        if sample_list is None:
+            sample_list = list(self.tr_muts.keys())
         sample_list_cp = copy.deepcopy(sample_list)
         for unam, sp_muts in self.tr_muts.items():
             # Skip if sample name not requested:
