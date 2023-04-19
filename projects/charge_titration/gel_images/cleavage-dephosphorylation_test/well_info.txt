@@ -1,0 +1,23 @@
+The image shown in "cleavage-tests.pdf" shows the ligation tests to the first three barcoded adapters and a base cleavage test using the E.coli tRNA-Lys-UUU oligo.
+
+
+For the ligation test a pool of previously isolated and deacylated human tRNAs were used. This was then treated in 5 different ways to test base oxidation, cleavage and dephosphorylation:
+No Ox: No oxidation (use NaCl instead of NaIO4), remains CCA (positive control 1)
+Borax: Use Evans et al. cleavage to make CC (positive control 2)
+Lysine: Full standard treatment to make CC (test conditions)
+No clvg: No cleavage and dephosphorylation (negative control 1)
+No dephos: No dephosphorylation (negative control 2)
+
+Using tRNA from the above treatments, 35ng was ligated to each of the first three barcoded adapters and run side-by-side with the corresponding input tRNA (i.e. before ligation).
+Without oxidation all tRNAs should end on CCA and ligate, with complete oxidation but without cleavage all tRNAs should be unavailable for ligation, similar if omitting dephosphorylation, with complete oxidation, cleavage and dephosphorylation all tRNAs should end on CC and ligate.
+
+
+For the base cleavage test using the E.coli tRNA-Lys-UUU oligo, the oligo was used (50 ng) in the same 5 treatments as in the ligation test and run on a gel to resolve the resulting CCA vs. CC ending oligo. The oligo synthesized as CCA-ending and as CC-end was run as size markers including a 50/50 mix flanking the samples.
+
+
+
+The RNA ladder used is NEB Low Range ssRNA Ladder (N0364S):
+https://www.neb.com/products/n0364-low-range-ssrna-ladder
+
+
+
