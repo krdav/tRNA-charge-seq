@@ -18,6 +18,9 @@ class SWIPE_align:
     https://github.com/torognes/swipe
     SWIPE performs Smith-Waterman local sequence alignment
     on each read against all sequences in the database.
+    If used on sequences not derived from the UMI_trim class,
+    a sample sheet with seqeunce paths, species and unique sample names
+    must be specified. See example folder for formatting.
     Keyword arguments:
     gap_penalty -- Penalty for opening a gap in the alignment (default 6)
     extension_penalty -- Penalty for extending a gap in the alignment (default 1)
@@ -25,12 +28,13 @@ class SWIPE_align:
     common_seqs -- bzip2 compressed fasta file of commonly observed sequences to avoid duplicated alignments (default None)
     overwrite_dir -- Overwrite old alignment folder if any exists (default False)
     SWIPE_threads -- Threads specified to SWIPE (default 4)
+    from_UMIdir -- Is the input data from a folder made with the UMI_trim class? (default True)
     verbose -- Verbose printing (default True)
     '''
     def __init__(self, dir_dict, tRNA_database, sample_df, score_mat, \
                  gap_penalty=6, extension_penalty=1, min_score_align=15, \
                  common_seqs=None, overwrite_dir=False, SWIPE_threads=4, \
-                 verbose=True):
+                 from_UMIdir=True, verbose=True):
         # Swipe command template:
         self.swipe_cmd_tmp = 'swipe\t--query\tINPUT_FILE\t--db\tDATABASE_FILE\t--out\tOUTPUT_FILE\t--symtype\t1\t--outfmt\t7\t--num_alignments\t3\t--num_descriptions\t3\t--evalue\t0.000000001\t--num_threads\tTHREADS\t--strand\t1\t--matrix\tSCORE_MATRIX\t-G\tGAP_PENALTY\t-E\tEXTENSION_PENALTY'
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('SCORE_MATRIX', score_mat)
@@ -44,12 +48,24 @@ class SWIPE_align:
         self.dir_dict = dir_dict
         self.common_seqs_fnam = common_seqs
         self.common_seqs_dict = dict() # map common sequences to index
+        self.from_UMIdir = from_UMIdir
 
         # Check files exists before starting:
-        self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
-        for _, row in self.sample_df.iterrows():
-            trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
-            assert(os.path.exists(trimmed_fn))
+        if self.from_UMIdir:
+            self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
+            for _, row in self.sample_df.iterrows():
+                trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
+                assert(os.path.exists(trimmed_fn))
+        else:
+            # File paths are specified in sample_df
+            for _, row in self.sample_df.iterrows():
+                # Absolute path:
+                if row['path'][0] == '/':
+                    fpath = row['path']
+                # Relative path:
+                else:
+                    fpath = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], row['path'])
+                assert(os.path.exists(fpath))
 
         # If using common sequences, check the input format and existence,
         # then read into dictionary:
@@ -80,7 +96,10 @@ class SWIPE_align:
 
     def _make_dir(self, overwrite):
         # Create folder for files:
-        self.align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
+        self.data_dir_abs = '{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'])
+        if not os.path.exists(self.data_dir_abs):
+            os.mkdir(self.data_dir_abs)
+        self.align_dir_abs = '{}/{}'.format(self.data_dir_abs, self.dir_dict['align_dir'])
         try:
             os.mkdir(self.align_dir_abs)
         except:
@@ -178,7 +197,17 @@ class SWIPE_align:
         else:
             sp_tRNA_database = self.tRNA_database[row['species']]
             sample_name_unique = row['sample_name_unique']
-            trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, sample_name_unique)
+
+            # File from UMI dir or path specified in sample_df:
+            if self.from_UMIdir:
+                trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, sample_name_unique)
+            else:
+                # Absolute path:
+                if row['path'][0] == '/':
+                    trimmed_fn = row['path']
+                # Relative path:
+                else:
+                    trimmed_fn = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], row['path'])
             trimmed_fasta_fn = trimmed_fn[:-10] + '.fasta'
             swipe_cmd, swipe_outfile = self._make_SWIPE_cmd(sp_tRNA_database, trimmed_fasta_fn, sample_name_unique)
         if self.dry_run:
@@ -428,6 +457,7 @@ class SWIPE_align:
 
         # Dump unaligned sequences:
         SWnohits_fnam = '{}_SWalign-nohits.fasta.bz2'.format(sample_name_unique)
+        Ninput = 0
         if type(row) == str:
             with bz2.open(SWnohits_fnam, 'wt', encoding="utf-8") as fh_out:
                 with bz2.open(self.common_seqs_fnam, 'rt') as fh_in:
@@ -437,16 +467,28 @@ class SWIPE_align:
                             fh_out.write(">{}\n{}\n".format(record.id, str(record.seq)))
             return(False)
         else:
-            trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, sample_name_unique)
+            # File from UMI dir or path specified in sample_df:
+            if self.from_UMIdir:
+                trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, sample_name_unique)
+            else:
+                # Absolute path:
+                if row['path'][0] == '/':
+                    trimmed_fn = row['path']
+                # Relative path:
+                else:
+                    trimmed_fn = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], row['path'])
             with bz2.open(SWnohits_fnam, 'wt', encoding="utf-8") as fh_out:
                 with bz2.open(trimmed_fn, 'rt') as fh_in:
                     for title, seq, qual in FastqGeneralIterator(fh_in):
+                        Ninput += 1
                         seq_id = title.split()[0]
                         if seq_id in query_nohits:
                             fh_out.write(">{}\n{}\n".format(title, seq))
 
             # Calculate stats:
-            if row['N_after_trim'] == 0:
+            if not self.from_UMIdir:
+                map_p = N_mapped / Ninput * 100
+            elif row['N_after_trim'] == 0:
                 map_p = 0
             else:
                 map_p = N_mapped / row['N_after_trim'] * 100

@@ -17,11 +17,12 @@ class STATS_collection:
     check_exists -- Check if required files exist before starting. If set to False, this will ignore checking for common count (default True)
     overwrite_dir -- Overwrite old stats folder if any exists (default False)
     check_exists -- Check if input files exist (default True)
-    UMI_SW_sorted -- Assume UMI and SW results are sorted in the same order. This gives a massive memory saving. (default True)
+    reads_SW_sorted -- Assume reads and SW results are sorted in the same order. This gives a massive memory saving. (default True)
+    from_UMIdir -- Is the input data from a folder made with the UMI_trim class? (default True)
     '''
     def __init__(self, dir_dict, tRNA_data, sample_df, common_seqs=None, \
                  ignore_common_count=False, check_exists=True, overwrite_dir=False, \
-                 UMI_SW_sorted=True):
+                 reads_SW_sorted=True, from_UMIdir=True):
         self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', \
                                  'sample_name', 'replicate', 'barcode', 'tRNA_annotation', \
                                  'align_score', 'unique_annotation', 'tRNA_annotation_len', \
@@ -45,17 +46,30 @@ class STATS_collection:
         self.dir_dict = dir_dict
         self.common_seqs_fnam = common_seqs
         self.common_seqs_info = dict() # Name to sequence for common sequence
-        self.UMI_SW_sorted = UMI_SW_sorted
+        self.reads_SW_sorted = reads_SW_sorted
+        self.from_UMIdir = from_UMIdir
 
         # Check files exists before starting:
         self.align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
-        self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
+        if self.from_UMIdir:
+            self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
         if check_exists:
             for _, row in self.sample_df.iterrows():
                 SWres_fnam = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
                 assert(os.path.exists(SWres_fnam))
-                trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
-                assert(os.path.exists(trimmed_fn))
+                if self.from_UMIdir:
+                    trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
+                    assert(os.path.exists(trimmed_fn))
+                else:
+                    # File paths are specified in sample_df
+                    for _, row in self.sample_df.iterrows():
+                        # Absolute path:
+                        if row['path'][0] == '/':
+                            fpath = row['path']
+                        # Relative path:
+                        else:
+                            fpath = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], row['path'])
+                    assert(os.path.exists(fpath))
                 common_obs_fn = '{}/{}_common-seq-obs.json'.format(self.align_dir_abs, row['sample_name_unique'])
                 if not self.common_seqs_fnam is None:
                     assert(os.path.exists(common_obs_fn))
@@ -95,7 +109,7 @@ class STATS_collection:
             print('Loaded results from previous run... Not running stats collection.')
             return(self.concat_df)
         elif not self.common_seqs_fnam is None:
-            self._load_commen_seqs(verbose)
+            self._load_common_seqs(verbose)
 
         self.verbose = verbose
         if self.verbose:
@@ -117,7 +131,7 @@ class STATS_collection:
         return(self.concat_df)
     '''
 
-    def _load_commen_seqs(self, verbose):
+    def _load_common_seqs(self, verbose):
         # Make name to sequence dictionary for common sequences.
         # We can only allow one species if using common sequences.
         # Multiple species would require running the alignment on common sequences
@@ -165,24 +179,36 @@ class STATS_collection:
         return(stats_agg_fnam)
 
     def _read_non_common(self, row, stats_fh):
-        # UMI fastq files must be read to
+        # Read fastq files must be read to
         # extract UMI and 5/3p non-template bases:
-        trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
-        if self.UMI_SW_sorted:
-            UMIseqs_fh = bz2.open(trimmed_fn, 'rt')
-            UMI_info_iter = SeqIO.parse(UMIseqs_fh, "fastq")
-            UMIreadID = ''
-        # If UMI and SW results are not sorted the same way,
-        # the UMI information must be read into memory:
+        # File from UMI dir or path specified in sample_df:
+        if self.from_UMIdir:
+            trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
         else:
-            UMI_info = dict()
+            # Absolute path:
+            if row['path'][0] == '/':
+                trimmed_fn = row['path']
+            # Relative path:
+            else:
+                trimmed_fn = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], row['path'])
+        if self.reads_SW_sorted:
+            reads_fh = bz2.open(trimmed_fn, 'rt')
+            read_info_iter = SeqIO.parse(reads_fh, "fastq")
+            readID = ''
+        # If reads and SW results are not sorted the same way,
+        # the read information must be read into memory:
+        else:
+            read_info = dict()
             with bz2.open(trimmed_fn, 'rt') as fh_bz:
-                for UMIread in SeqIO.parse(fh_bz, "fastq"):
+                for read in SeqIO.parse(fh_bz, "fastq"):
                     # The last two strings are the adapter sequence and the UMI:
-                    _3p_bc, _5p_umi = UMIread.description.split()[-1].split(':')[-2:]
-                    seq = str(UMIread.seq)
-                    readID = str(UMIread.id)
-                    UMI_info[readID] = (_5p_umi, seq)
+                    try:
+                        _3p_bc, _5p_umi = read.description.split()[-1].split(':')[-2:]
+                    except:
+                        _3p_bc, _5p_umi = '', ''
+                    seq = str(read.seq)
+                    readID = str(read.id)
+                    read_info[readID] = (_5p_umi, seq)
 
         # Open the alignment results:
         SWres_fnam = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
@@ -191,30 +217,33 @@ class STATS_collection:
             # i.e. as a transient dict-like object
             SWres = json_stream.load(SWres_fh)
             # Loop through each read in the alignment results:
-            for readID, align_dict in SWres.persistent().items():
+            for SWreadID, align_dict in SWres.persistent().items():
                 common_seq = False
                 # Skip reads that were not aligned:
                 if not align_dict['aligned']:
                     continue
 
-                # Extract UMI info:
+                # Extract read info:
                 try:
-                    if self.UMI_SW_sorted:
-                        while UMIreadID != readID:
-                            UMIread = next(UMI_info_iter)
-                            _3p_bc, _5p_umi = UMIread.description.split()[-1].split(':')[-2:]
-                            read_seq = str(UMIread.seq)
-                            UMIreadID = str(UMIread.id)
+                    if self.reads_SW_sorted:
+                        while readID != SWreadID:
+                            read = next(read_info_iter)
+                            try:
+                                _3p_bc, _5p_umi = read.description.split()[-1].split(':')[-2:]
+                            except:
+                                _3p_bc, _5p_umi = '', ''
+                            read_seq = str(read.seq)
+                            readID = str(read.id)
                     else:
-                        _5p_umi, read_seq = UMI_info.pop(readID)
+                        _5p_umi, read_seq = read_info.pop(SWreadID)
                 except:
-                    raise Exception('Read ID ({}) not found among UMI trimmed sequences. Did any of the fastq headers change such that there is a mismatch between headers in the alignment json and those in the trimmed UMIs?'.format(readID))
+                    raise Exception('Read ID ({}) not found among read sequences. Did any of the fastq headers change such that there is a mismatch between headers in the alignment json and those in the reads?'.format(SWreadID))
 
                 # Collect all the information:
                 sample_name_unique = row['sample_name_unique']
-                sample_name = row['sample_name']
-                replicate = row['replicate']
-                barcode = row['barcode']
+                sample_name = row_exist_or_none(row, 'sample_name')
+                replicate = row_exist_or_none(row, 'replicate')
+                barcode = row_exist_or_none(row, 'barcode')
                 tRNA_annotation = align_dict['name']
                 tRNA_annotation_first = tRNA_annotation.split('@')[0]
                 align_score = align_dict['score']
@@ -235,7 +264,7 @@ class STATS_collection:
                 qpos = align_dict['qpos'][0]
                 _5p_non_temp = read_seq[0:(qpos[0]-1)]
                 _3p_non_temp = read_seq[qpos[1]:]
-                _3p_bc = row['barcode_seq']
+                _3p_bc = row_exist_or_none(row, 'barcode_seq')
                 # For "non-common" sequences multiple reads
                 # have not been collapsed:
                 count = 1
@@ -249,7 +278,7 @@ class STATS_collection:
                 csv_line = ','.join(map(str, line_lst))
                 print(csv_line, file=stats_fh)
 
-        UMIseqs_fh.close()
+        reads_fh.close()
 
     def _read_common(self, row, stats_fh):
         # Read common sequences observations for this sample:
@@ -276,9 +305,9 @@ class STATS_collection:
 
                 # Collect all the information:
                 sample_name_unique = row['sample_name_unique']
-                sample_name = row['sample_name']
-                replicate = row['replicate']
-                barcode = row['barcode']
+                sample_name = row_exist_or_none(row, 'sample_name')
+                replicate = row_exist_or_none(row, 'replicate')
+                barcode = row_exist_or_none(row, 'barcode')
                 tRNA_annotation = align_dict['name']
                 tRNA_annotation_first = tRNA_annotation.split('@')[0]
                 align_score = align_dict['score']
@@ -301,15 +330,15 @@ class STATS_collection:
                 try:
                     seq = self.common_seqs_info[readID]
                 except KeyError:
-                    raise Exception('Read ID ({}) not found among UMI trimmed sequences. '
+                    raise Exception('Read ID ({}) not found among sequences. '
                                     'Did any of the fastq headers change such that there is '
                                     'a mismatch between headers in the alignment json and those '
-                                    'in the trimmed UMIs?'.format(readID))
+                                    'in the reads?'.format(readID))
                 qpos = align_dict['qpos'][0]
                 _5p_non_temp = seq[0:(qpos[0]-1)]
                 _3p_non_temp = seq[qpos[1]:]
                 _5p_umi = ''  # UMI information is lost when using common sequences
-                _3p_bc = row['barcode_seq']
+                _3p_bc = row_exist_or_none(row, 'barcode_seq')
                 # For common sequences the add the read count:
                 count = int(common_obs[readID_int])
 
@@ -339,3 +368,8 @@ class STATS_collection:
         self.concat_df = pd.read_csv(stats_agg_fnam, keep_default_na=False, dtype=self.stats_agg_cols_td)
 
 
+def row_exist_or_none(row, col):
+    try:
+        return(row[col])
+    except:
+        return(None)
