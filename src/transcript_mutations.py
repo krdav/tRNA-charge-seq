@@ -891,7 +891,7 @@ class TM_analysis:
         # Expand masked sequence based on similar sequences #
         # Initiate the aligner:
         aligner = Align.PairwiseAligner()
-        aligner.mode = 'local'
+        aligner.mode = 'global'
         aligner.match_score = match_score
         aligner.mismatch_score = mismatch_score
         aligner.open_gap_score = open_gap_score
