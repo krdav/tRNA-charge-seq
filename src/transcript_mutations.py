@@ -932,27 +932,33 @@ class TM_analysis:
                     # Concatenate the masked query that aligns to the target:
                     q_masked = tr_muts_combi[species][anno2]['seq_masked']
                     q_masked_trans = list()
+                    q_trans = list()
                     for i in range(0, len(q_cor)):
-                        q_chunk = q_masked[q_cor[i][0]:q_cor[i][1]]
-                        q_masked_trans.append(q_chunk)
+                        q_masked_trans.append(q_masked[q_cor[i][0]:q_cor[i][1]])
+                        q_trans.append(query[q_cor[i][0]:q_cor[i][1]])
                         # Insert gaps when these appear in the query
                         # i.e. characters in the target is unaligned:
                         if i < (len(q_cor)-1):
                             for j in range(t_cor[i+1][0] - t_cor[i][1]):
                                 q_masked_trans.append('-')
+                                q_trans.append('-')
                     q_masked_trans = ''.join(q_masked_trans)
+                    q_trans = ''.join(q_trans)
                     assert(len(q_masked_trans) == len(target))
+                    assert(len(q_trans) == len(target))
 
                     # Update masked sequence:
                     if tr_muts_combi[species][anno1]['seq_masked_exp'] == '':
                         # If "N" is found in the masked query then pick it out
                         # otherwise stick to the target sequence:
-                        seq_masked_exp = ''.join([qc if qc == 'N' else tc for tc, qc in zip(target, q_masked_trans)])
+                        # Also, require target of masking to be the same nucleotide
+                        # as the "donor" (i.e. query) [tc == qc]:
+                        seq_masked_exp = ''.join([qm if (tc == qc and qm == 'N') else tc for tc, qc, qm in zip(target, q_trans, q_masked_trans)])
                         tr_muts_combi[species][anno1]['seq_masked_exp'] = seq_masked_exp
                     else:
                         # Expand the masked character:
                         t_masked = tr_muts_combi[species][anno1]['seq_masked_exp']
-                        seq_masked_exp = ''.join([qc if qc == 'N' else tc for tc, qc in zip(t_masked, q_masked_trans)])
+                        seq_masked_exp = ''.join([qm if (tc == qc and qm == 'N') else tc for tc, qc, qm in zip(t_masked, q_trans, q_masked_trans)])
                         tr_muts_combi[species][anno1]['seq_masked_exp'] = seq_masked_exp
 
         # Collect statistics on the masked sequences:
