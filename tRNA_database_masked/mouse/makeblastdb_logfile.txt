@@ -1,0 +1,16 @@
+Starting subprocess with command:['makeblastdb', '-dbtype', 'prot', '-in', 'mouse-tRNAs.fa', '-blastdb_version', '4']
+
+
+Building a new DB, current time: 05/17/2023 11:21:13
+New DB name:   /home/sulab/tRNA-charge-seq/projects/alignment-opti/data/transcript_mutations/tRNA_database_masked/mouse/mouse-tRNAs.fa
+New DB title:  mouse-tRNAs.fa
+Sequence type: Protein
+Keep MBits: T
+Maximum file size: 3000000000B
+Adding sequences from FASTA; added 240 sequences in 0.00222588 seconds.
+
+
+
+****** DONE ******
+
+

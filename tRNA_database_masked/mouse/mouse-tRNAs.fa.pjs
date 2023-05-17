@@ -1,0 +1,18 @@
+{
+  "version": "1.2",
+  "dbname": "mouse-tRNAs.fa",
+  "dbtype": "Protein",
+  "db-version": 4,
+  "description": "mouse-tRNAs.fa",
+  "number-of-letters": 18382,
+  "number-of-sequences": 240,
+  "last-updated": "2023-05-17T11:21:00",
+  "number-of-volumes": 1,
+  "bytes-total": 42893,
+  "bytes-to-cache": 20623,
+  "files": [
+    "mouse-tRNAs.fa.phr",
+    "mouse-tRNAs.fa.pin",
+    "mouse-tRNAs.fa.psq"
+  ]
+}
