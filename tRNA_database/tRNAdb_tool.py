@@ -10,7 +10,12 @@ cyto_fnam = sys.argv[2]
 eColiLys = '''>Escherichia_coli_str_K_12_substr_MG1655_tRNA-eColiLys-TTT-1-1
 GGGTCGTTAGCTCAGTTGGTAGAGCAGTTGACTTTTAATCAATTGGTCGCAGGTTCGAATCCTGCACGACCCACCA'''
 
+eColiThr = '''>Escherichia_coli_str_K_12_substr_MG1655_tRNA-eColiThr-CGT-1-1
+GCCGATATAGCTCAGTTGGTAGAGCAGCGCATTCGTAATGCGAAGGTCGTAGGTTCGACTCCTATTATCGGCACCA'''
+
+
 print(eColiLys)
+print(eColiThr)
 
 db_id_set = set()
 seq_set = set()

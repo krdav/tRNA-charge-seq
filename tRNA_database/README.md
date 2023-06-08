@@ -30,8 +30,8 @@ For mouse:
 
 
 ### Merging and formatting
-Cyto/mito tRNA sequences are merged and formatted, and an Ecoli Lys tRNA sequence is added becuase this sequence is used as a spike-in control.
-Note that the Ecoli Lys tRNA sequence is hard-coded in the `tRNAdb_tool.py` script...
+Cyto/mito tRNA sequences are merged and formatted, and Ecoli Lys and Thr tRNAs sequences are added becuase these sequences are used as a spike-in controls.
+Note that the control sequences are hard-coded in the `tRNAdb_tool.py` script...
 
 
 Merge and format human:  
