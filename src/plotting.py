@@ -250,6 +250,8 @@ class TRNA_plot:
     def plot_Ecoli_ctr(self, plot_name='ecoli-ctr_charge_plot', sample_list=None,
                        charge_plot=True, min_obs=1, \
                        sample_list_exl=None, bc_list_exl=None):
+        if self.charge_df is None:
+            self.get_charge_df()
 
         if charge_plot:
             y_axis = 'charge'
