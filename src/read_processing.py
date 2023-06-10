@@ -234,9 +234,11 @@ class BC_split:
                 # Search for barcodes and write to barcode specific file:
                 found = False
                 for bc, sample_name, fh in bc_fh:
+                    if ('N' in bc and sum(l1!=l2 for l1, l2 in zip(seq[-len(bc):], bc) if l2 != 'N') <= self.max_dist) or \
+                       (not 'N' in bc and jellyfish.hamming_distance(seq[-len(bc):], bc) <= self.max_dist):
                     # Old if statement compatible with random nucleotides in barcode:
                     # if all(l1==l2 for l1, l2 in zip(seq[-len(bc):], bc) if l2 != 'N'):
-                    if jellyfish.hamming_distance(seq[-len(bc):], bc) <= self.max_dist:
+                    # if jellyfish.hamming_distance(seq[-len(bc):], bc) <= self.max_dist:
                         found = True
                         # Add adapter sequence to title:
                         title = title + ':' + seq[-len(bc):]
