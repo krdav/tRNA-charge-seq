@@ -33,6 +33,7 @@ class STATS_collection:
                                       int, int, str, str, str, str, str, bool, bool, \
                                       str, str, str, str, int]
         self.stats_csv_header_td = {nam:tp for nam, tp in zip(self.stats_csv_header, self.stats_csv_header_type)}
+        # Here: could add number of gaps, or maybe a boolean, indicating if the faction or align score to max is above a threshold
         self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', \
                                'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', \
                                '5p_cover', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', \
@@ -172,6 +173,7 @@ class STATS_collection:
             stat_df = pd.read_csv(stats_fh, keep_default_na=False, dtype=self.stats_csv_header_td)
 
         # Aggregate dataframe and write as CSV file:
+        # Here: also filter sequences with long 5p_non-temp sequences (these are likely template switch products)
         row_mask = (stat_df['3p_cover']) & (stat_df['3p_non-temp'] == '')
         agg_df = stat_df[row_mask].groupby(self.stats_agg_cols[:-1], as_index=False).agg({"count": "sum"})
         agg_df.to_csv(stats_agg_fnam, header=True, index=False)
