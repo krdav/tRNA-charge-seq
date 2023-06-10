@@ -24,21 +24,21 @@ class STATS_collection:
                  ignore_common_count=False, check_exists=True, overwrite_dir=False, \
                  reads_SW_sorted=True, from_UMIdir=True):
         self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', \
-                                 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', \
+                                 'sample_name', 'replicate', 'barcode', 'species', 'tRNA_annotation', \
                                  'align_score', 'unique_annotation', 'tRNA_annotation_len', \
                                  'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', \
                                  'codon', 'anticodon', 'amino_acid', '5p_cover', '3p_cover', \
                                  '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', 'count']
-        self.stats_csv_header_type = [str, bool, str, str, int, str, str, int, str, int, \
+        self.stats_csv_header_type = [str, bool, str, str, int, str, str, str, int, str, int, \
                                       int, int, str, str, str, str, str, bool, bool, \
                                       str, str, str, str, int]
         self.stats_csv_header_td = {nam:tp for nam, tp in zip(self.stats_csv_header, self.stats_csv_header_type)}
         # Here: could add number of gaps, or maybe a boolean, indicating if the faction or align score to max is above a threshold
-        self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', \
+        self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'species', \
                                'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', \
                                '5p_cover', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', \
                                'count']
-        self.stats_agg_cols_type = [str, str, int, str, str, int, bool, \
+        self.stats_agg_cols_type = [str, str, int, str, str, int, bool, str, \
                                     bool, str, str, str, str, int]
         self.stats_agg_cols_td = {nam:tp for nam, tp in zip(self.stats_agg_cols, self.stats_agg_cols_type)}
 
@@ -243,6 +243,7 @@ class STATS_collection:
 
                 # Collect all the information:
                 sample_name_unique = row['sample_name_unique']
+                species = row['species']
                 sample_name = row_exist_or_none(row, 'sample_name')
                 replicate = row_exist_or_none(row, 'replicate')
                 barcode = row_exist_or_none(row, 'barcode')
@@ -273,7 +274,7 @@ class STATS_collection:
 
                 # Print line to output csv file:
                 line_lst = [readID, common_seq, sample_name_unique, sample_name, replicate, \
-                            barcode, tRNA_annotation, align_score, unique_annotation, \
+                            barcode, species, tRNA_annotation, align_score, unique_annotation, \
                             tRNA_annotation_len, align_5p_idx, align_3p_idx, align_5p_nt, \
                             align_3p_nt, codon, anticodon, amino_acid, _5p_cover, _3p_cover, \
                             _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc, count]
@@ -307,6 +308,7 @@ class STATS_collection:
 
                 # Collect all the information:
                 sample_name_unique = row['sample_name_unique']
+                species = row['species']
                 sample_name = row_exist_or_none(row, 'sample_name')
                 replicate = row_exist_or_none(row, 'replicate')
                 barcode = row_exist_or_none(row, 'barcode')
@@ -346,7 +348,7 @@ class STATS_collection:
 
                 # Print line to output csv file:
                 line_lst = [readID, common_seq, sample_name_unique, sample_name, replicate, \
-                            barcode, tRNA_annotation, align_score, unique_annotation, \
+                            barcode, species, tRNA_annotation, align_score, unique_annotation, \
                             tRNA_annotation_len, align_5p_idx, align_3p_idx, align_5p_nt, \
                             align_3p_nt, codon, anticodon, amino_acid, _5p_cover, _3p_cover, \
                             _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc, count]
