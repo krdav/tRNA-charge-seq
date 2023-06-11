@@ -38,7 +38,7 @@ class STATS_collection:
                                'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', \
                                '5p_cover', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', \
                                'count']
-        self.stats_agg_cols_type = [str, str, int, str, str, int, bool, str, \
+        self.stats_agg_cols_type = [str, str, int, str, str, str, int, bool, \
                                     bool, str, str, str, str, int]
         self.stats_agg_cols_td = {nam:tp for nam, tp in zip(self.stats_agg_cols, self.stats_agg_cols_type)}
 
