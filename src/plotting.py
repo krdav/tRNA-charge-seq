@@ -76,6 +76,8 @@ class TRNA_plot:
         self.all_stats = pd.read_csv(stats_fnam, keep_default_na=False, dtype=self.stats_agg_cols_td)
         # Get rid of 1/2 in mito Leu amino acid name:
         self.all_stats['amino_acid'] = [AA[:-1] if AA[-1]=='1' or AA[-1]=='2' else AA for AA in self.all_stats['amino_acid'].values]
+        # Translate codon into single letter amino acid:
+        self.all_stats['AA_letter'] = [AAA2A[AAA] for AAA in self.all_stats['amino_acid'].values]
         # Add amino acid - codon string:
         self.all_stats['AA_codon'] = [AA + '-' + codon for codon, AA in zip(self.all_stats['codon'].values, self.all_stats['amino_acid'].values)]
         # tRNA annotation short form:
@@ -105,22 +107,7 @@ class TRNA_plot:
             single_aa.append(sa)
         self.all_stats['single_aa'] = single_aa
         self.all_stats['mito_codon'] = ['mito_tRNA' in anno for anno in self.all_stats['tRNA_annotation'].values]
-        self.all_stats['Ecoli_ctr'] = ['Escherichia_coli' in anno for anno in self.all_stats['tRNA_annotation'].values]
-        # Translate codon into single letter amino acid:
-        ctab_cyto = copy.deepcopy(Bio.Data.CodonTable.generic_by_id[1].forward_table)
-        # Selenocysteine has to be added:
-        ctab_cyto['UGA'] = 'SeC'
-        ctab_mito = copy.deepcopy(Bio.Data.CodonTable.generic_by_id[2].forward_table)
-        ctab_bac = copy.deepcopy(Bio.Data.CodonTable.generic_by_id[11].forward_table)
-        aa_letters = list()
-        for ecoli, mito, codon in zip(self.all_stats['Ecoli_ctr'], self.all_stats['mito_codon'], self.all_stats['codon'].values):
-            if mito:
-                aa_letters.append(ctab_mito[codon])
-            elif ecoli:
-                aa_letters.append(ctab_bac[codon])
-            else:
-                aa_letters.append(ctab_cyto[codon])
-        self.all_stats['AA_letter'] = aa_letters
+        self.all_stats['Ecoli_ctr'] = ['Escherichia_coli' in anno and sp != 'ecoli' for sp, anno in zip(self.all_stats['species'].values, self.all_stats['tRNA_annotation'].values)]
 
         # Make output folder:
         self._make_dir(overwrite_dir)
@@ -388,10 +375,15 @@ class TRNA_plot:
                     AAi = {aa:i for i, aa in enumerate(sorted(AA_set))}
                     colors_cyto = {c: cmap_b(AAi[c]) for c in x_list_cyto}
                     colors_mito = {c: cmap_b(AAi[c]) for c in x_list_mito}
-                    fig = plt.figure(figsize=(8*Ngrp, 9))
-                    gs = fig.add_gridspec(2, 4)
-                    ax1 = fig.add_subplot(gs[0, :])
-                    ax2 = fig.add_subplot(gs[1, :])
+                    if sum(mask_mito) > 0:
+                        fig = plt.figure(figsize=(8*Ngrp, 9))
+                        gs = fig.add_gridspec(2, 4)
+                        ax1 = fig.add_subplot(gs[0, :])
+                        ax2 = fig.add_subplot(gs[1, :])
+                    else:
+                        fig = plt.figure(figsize=(8*Ngrp, 4.5))
+                        gs = fig.add_gridspec(1, 4)
+                        ax1 = fig.add_subplot(gs[0, :])
                 elif plot_type == 'codon':
                     x_axis = 'AA_codon'
                     x_list_cyto = sorted(set(charge_sample['AA_codon'][mask_cyto].values), key=str.casefold)
@@ -400,10 +392,15 @@ class TRNA_plot:
                     AAi = {aa:i for i, aa in enumerate(sorted(AA_set))}
                     colors_cyto = {c: cmap_b(AAi[c.split('-')[0]]) for c in x_list_cyto}
                     colors_mito = {c: cmap_b(AAi[c.split('-')[0]]) for c in x_list_mito}
-                    fig = plt.figure(figsize=(16*Ngrp, 9))
-                    gs = fig.add_gridspec(2, 4)
-                    ax1 = fig.add_subplot(gs[0, :])
-                    ax2 = fig.add_subplot(gs[1, 1:3])
+                    if sum(mask_mito) > 0:
+                        fig = plt.figure(figsize=(16*Ngrp, 9))
+                        gs = fig.add_gridspec(2, 4)
+                        ax1 = fig.add_subplot(gs[0, :])
+                        ax2 = fig.add_subplot(gs[1, 1:3])
+                    else:
+                        fig = plt.figure(figsize=(16*Ngrp, 4.5))
+                        gs = fig.add_gridspec(1, 4)
+                        ax1 = fig.add_subplot(gs[0, :])
                 elif plot_type == 'transcript':
                     x_axis = 'tRNA_anno_short'
                     mask_cyto = (~charge_sample['Ecoli_ctr']) & (~charge_sample['mito_codon'])
@@ -412,19 +409,25 @@ class TRNA_plot:
                     x_list_mito = sorted(set(charge_sample['tRNA_anno_short'][mask_mito].values), key=str.casefold)
                     colors_cyto = None
                     colors_mito = None
-                    fig = plt.figure(figsize=(45*Ngrp, 15))
-                    gs = fig.add_gridspec(2, 10)
-                    ax1 = fig.add_subplot(gs[0, :])
-                    ax2 = fig.add_subplot(gs[1, 4:6])
+                    if sum(mask_mito) > 0:
+                        fig = plt.figure(figsize=(45*Ngrp, 15))
+                        gs = fig.add_gridspec(2, 10)
+                        ax1 = fig.add_subplot(gs[0, :])
+                        ax2 = fig.add_subplot(gs[1, 4:6])
+                    else:
+                        fig = plt.figure(figsize=(45*Ngrp, 7.5))
+                        gs = fig.add_gridspec(1, 10)
+                        ax1 = fig.add_subplot(gs[0, :])
 
                 # Plot either as grouped or single bars:
                 if group:
                     # Cyto tRNAs
                     g1 = sns.barplot(ax=ax1, x=x_axis, y=y_axis, hue='hue_value', hue_order=hue_order, order=x_list_cyto, data=charge_sample[mask_cyto], capsize=.025, errwidth=2, edgecolor='black', linewidth=2, alpha=0.8)
-                    # Mito tRNAs
-                    g2 = sns.barplot(ax=ax2, x=x_axis, y=y_axis, hue='hue_value', hue_order=hue_order, order=x_list_mito, data=charge_sample[mask_mito], capsize=.025, errwidth=2, edgecolor='black', linewidth=2, alpha=0.8)
-                    # Legend:
-                    g2.legend_.remove()
+                    if sum(mask_mito) > 0:
+                        # Mito tRNAs
+                        g2 = sns.barplot(ax=ax2, x=x_axis, y=y_axis, hue='hue_value', hue_order=hue_order, order=x_list_mito, data=charge_sample[mask_mito], capsize=.025, errwidth=2, edgecolor='black', linewidth=2, alpha=0.8)
+                        # Legend:
+                        g2.legend_.remove()
                     old_legend = g1.legend_
                     handles = old_legend.legendHandles
                     labels = hue_order
@@ -433,27 +436,31 @@ class TRNA_plot:
                 else:
                     # Cyto tRNAs
                     g1 = sns.barplot(ax=ax1, x=x_axis, y=y_axis, order=x_list_cyto, data=charge_sample[mask_cyto], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_cyto)
-                    # Mito tRNAs
-                    g2 = sns.barplot(ax=ax2, x=x_axis, y=y_axis, order=x_list_mito, data=charge_sample[mask_mito], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_mito)
+                    if sum(mask_mito) > 0:
+                        # Mito tRNAs
+                        g2 = sns.barplot(ax=ax2, x=x_axis, y=y_axis, order=x_list_mito, data=charge_sample[mask_mito], capsize=.1, errwidth=2, edgecolor='black', linewidth=2, alpha=0.85, palette=colors_mito)
 
                 # Set axis/title text:
                 g1.set_title('Cytoplasmic tRNA for sample/group {}'.format(sg_name))
                 g1.set_xticklabels(g1.get_xticklabels(), rotation=90)
                 g1.grid(True, axis='y')
                 g1.set_xlabel('');
-                g2.set_title('Mitochondrial tRNA for sample/group {}'.format(sg_name))
-                g2.set_xticklabels(g2.get_xticklabels(), rotation=90)
-                g2.grid(True, axis='y')
-                g2.set_xlabel('');
+                if sum(mask_mito) > 0:
+                    g2.set_title('Mitochondrial tRNA for sample/group {}'.format(sg_name))
+                    g2.set_xticklabels(g2.get_xticklabels(), rotation=90)
+                    g2.grid(True, axis='y')
+                    g2.set_xlabel('');
 
                 if charge_plot is True:
                     g1.set_ylabel('Charge (%)');
-                    g2.set_ylabel('Charge (%)');
                     g1.set(ylim=[0, 100])
-                    g2.set(ylim=[0, 100])
+                    if sum(mask_mito) > 0:
+                        g2.set_ylabel('Charge (%)');
+                        g2.set(ylim=[0, 100])
                 else:
                     g1.set_ylabel('Abundance (RPM)');
-                    g2.set_ylabel('Abundance (RPM)');
+                    if sum(mask_mito) > 0:
+                        g2.set_ylabel('Abundance (RPM)');
 
                 # Write to PDF file:
                 fig.tight_layout()
@@ -878,23 +885,10 @@ class TRNA_plot:
                     sc = False
             single_codon.append(sc)
         sample_stats['single_codon'] = single_codon
-        sample_stats['Ecoli_ctr'] = ['Escherichia_coli' in anno for anno in sample_stats['tRNA_annotation'].values]
+        sample_stats['Ecoli_ctr'] = ['Escherichia_coli' in anno and sp != 'ecoli' for sp, anno in zip(sample_stats['species'].values, sample_stats['tRNA_annotation'].values)]
         sample_stats['mito_codon'] = ['mito_tRNA' in anno for anno in sample_stats['tRNA_annotation'].values]
         # Translate codon into single letter amino acid:
-        ctab_cyto = copy.deepcopy(Bio.Data.CodonTable.generic_by_id[1].forward_table)
-        # Selenocysteine has to be added:
-        ctab_cyto['UGA'] = 'SeC'
-        ctab_mito = copy.deepcopy(Bio.Data.CodonTable.generic_by_id[2].forward_table)
-        ctab_bac = copy.deepcopy(Bio.Data.CodonTable.generic_by_id[11].forward_table)
-        aa_letters = list()
-        for ecoli, mito, codon in zip(sample_stats['Ecoli_ctr'], sample_stats['mito_codon'], sample_stats['codon'].values):
-            if mito:
-                aa_letters.append(ctab_mito[codon])
-            elif ecoli:
-                aa_letters.append(ctab_bac[codon])
-            else:
-                aa_letters.append(ctab_cyto[codon])
-        sample_stats['AA_letter'] = aa_letters
+        sample_stats['AA_letter'] = [AAA2A[AAA] for AAA in sample_stats['amino_acid'].values]
 
         # Choose rows from requested compartment:
         type_mask = (sample_stats['3p_cover'] == True) & (sample_stats['single_codon']) & (~sample_stats['Ecoli_ctr']) & (sample_stats['AA_letter'].apply(len) == 1)
@@ -976,5 +970,40 @@ def freq2ratio(freq):
 def ratio2freq(ratio):
     '''Convert ratio to frequency.'''
     return(ratio / (ratio + 1))
+
+
+
+AAA2A = {
+'Ala':  'A',
+'Arg':  'R',
+'Asn':  'N',
+'Asp':  'D',
+'Cys':  'C',
+'Gln':  'Q',
+'Glu':  'E',
+'Gly':  'G',
+'His':  'H',
+'Ile':  'I',
+'Leu':  'L',
+'Leu1': 'L',
+'Leu2': 'L',
+'Lys':  'K',
+'Met':  'M',
+'Phe':  'F',
+'Pro':  'P',
+'SeC':  'SeC',
+'Ser':  'S',
+'Ser1': 'S',
+'Ser2': 'S',
+'Thr':  'T',
+'Trp':  'W',
+'Tyr':  'Y',
+'Val':  'V',
+'eColiLys': 'K',
+'eColiThr': 'T',
+'iMet': 'M',
+'fMet': 'M'
+}
+
 
 
