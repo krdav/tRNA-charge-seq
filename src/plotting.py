@@ -332,7 +332,9 @@ class TRNA_plot:
         snam_df = self.sample_df.loc[:, ['sample_name', 'plot_group', 'hue_name', 'hue_value', 'hue_order']].drop_duplicates()
         charge_df_type = charge_df_type.merge(snam_df, on='sample_name')
         if group:
-            plot_iter = snam_df['plot_group'].drop_duplicates()
+            # Find all sample groups:
+            plot_group_set = [set(pg.split(' @&@ ')) for pg in self.sample_df.loc[:, 'plot_group'].values]
+            plot_iter = sorted({list(pg)[0] for pg in plot_group_set if len(pg) == 1})
         else:
             plot_iter = snam_df['sample_name'].drop_duplicates()
 
@@ -347,7 +349,10 @@ class TRNA_plot:
 
                 # Sample rows selected:
                 if group:
-                    sample_mask = (charge_df_type['plot_group'] == sg_name) & (charge_df_type['count'] >= min_obs)
+                    # Pick out samples names in the group:
+                    snam_mask = np.array([sg_name in pg for pg in plot_group_set])
+                    snam_set = set(self.sample_df.loc[snam_mask, 'sample_name'])
+                    sample_mask = (charge_df_type['sample_name'].isin(snam_set)) & (charge_df_type['count'] >= min_obs)
                 else:
                     sample_mask = (charge_df_type['sample_name'] == sg_name) & (charge_df_type['count'] >= min_obs)
 
