@@ -49,7 +49,15 @@ class SWIPE_align:
         self.common_seqs_fnam = common_seqs
         self.common_seqs_dict = dict() # map common sequences to index
         self.from_UMIdir = from_UMIdir
-
+        # Read score matrix to define match/mismatch scores:
+        self.nt_chars = 'ATGC'
+        score_mat_dict = read_scoremat(score_mat)
+        self.match_score = score_mat_dict['A']['A']
+        self.mismatch_score = score_mat_dict['A']['T']
+        try:
+            self.Nmatch_score = score_mat_dict['A']['N']
+        except:
+            self.Nmatch_score = self.mismatch_score
         # Check files exists before starting:
         if self.from_UMIdir:
             self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
@@ -383,6 +391,14 @@ class SWIPE_align:
                 query_hits['aseq'] = hit_dict['aseq'][name_idx[0]]
                 query_hits['dseq'] = hit_dict['dseq'][name_idx[0]]
                 query_hits['aligned'] = True
+                # Count the number of deletions and insertions:
+                query_hits['Ndel'] = query_hits['qseq'].count('-')
+                query_hits['Nins'] = query_hits['dseq'].count('-')
+                # Fraction of max alignment score:
+                numb_N = query_hits['dseq'].count('N')
+                max_match = len(query_hits['dseq']) - query_hits['Nins'] - numb_N
+                max_score = max_match * self.match_score + numb_N * self.Nmatch_score
+                query_hits['Fmax_score'] = query_hits['score'] / max_score
 
                 yield query, query_hits
             elif flush:
@@ -524,5 +540,26 @@ def indices(lst, element):
         except ValueError:
             return result
         result.append(offset)
+
+
+def read_scoremat(fnam):
+    # Read rows and columns into matrix:
+    mat = list()
+    with open(fnam) as fh:
+        for l in fh:
+            cols = l.split()
+            if cols[0] != '#':
+                mat.append(cols)
+
+    # Convert to dictionary:
+    scd = dict()
+    for i1, n1 in enumerate(mat[0]):
+        for r in mat[1:]:
+            try:
+                scd[n1][r[0]] = int(r[i1+1])
+            except:
+                scd[n1] = dict()
+                scd[n1][r[0]] = int(r[i1+1])
+    return(scd)
 
 
