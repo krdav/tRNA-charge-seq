@@ -375,9 +375,9 @@ class SWIPE_align:
                     query_hits['one_codon'] = True
                 else:
                     query_hits['one_codon'] = False
-                # Add qpos/dpos:
-                query_hits['qpos'] = [hit_dict['qpos'][didx] for didx in name_idx]
-                query_hits['dpos'] = [hit_dict['dpos'][didx] for didx in name_idx]
+                # Add qpos/dpos, but only for the first hit:
+                query_hits['qpos'] = hit_dict['qpos'][name_idx[0]]
+                query_hits['dpos'] = hit_dict['dpos'][name_idx[0]]
                 # Add alignment strings, but only for the first hit:
                 query_hits['qseq'] = hit_dict['qseq'][name_idx[0]]
                 query_hits['aseq'] = hit_dict['aseq'][name_idx[0]]

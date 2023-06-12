@@ -252,7 +252,7 @@ class STATS_collection:
                 align_score = align_dict['score']
                 unique_annotation = '@' not in tRNA_annotation
                 tRNA_annotation_len = self.tRNA_data[tRNA_annotation_first]['len']
-                align_5p_idx, align_3p_idx = align_dict['dpos'][0]
+                align_5p_idx, align_3p_idx = align_dict['dpos']
                 align_5p_nt = align_dict['qseq'][0]
                 align_3p_nt = align_dict['qseq'][-1]
 
@@ -264,7 +264,7 @@ class STATS_collection:
                 amino_acid = self.tRNA_data[tRNA_annotation_first]['amino_acid']
                 _5p_cover = align_5p_idx == 1
                 _3p_cover = align_3p_idx == tRNA_annotation_len
-                qpos = align_dict['qpos'][0]
+                qpos = align_dict['qpos']
                 _5p_non_temp = read_seq[0:(qpos[0]-1)]
                 _3p_non_temp = read_seq[qpos[1]:]
                 _3p_bc = row_exist_or_none(row, 'barcode_seq')
@@ -317,7 +317,7 @@ class STATS_collection:
                 align_score = align_dict['score']
                 unique_annotation = '@' not in tRNA_annotation
                 tRNA_annotation_len = self.tRNA_data[tRNA_annotation_first]['len']
-                align_5p_idx, align_3p_idx = align_dict['dpos'][0]
+                align_5p_idx, align_3p_idx = align_dict['dpos']
                 align_5p_nt = align_dict['qseq'][0]
                 align_3p_nt = align_dict['qseq'][-1]
 
@@ -338,7 +338,7 @@ class STATS_collection:
                                     'Did any of the fastq headers change such that there is '
                                     'a mismatch between headers in the alignment json and those '
                                     'in the reads?'.format(readID))
-                qpos = align_dict['qpos'][0]
+                qpos = align_dict['qpos']
                 _5p_non_temp = seq[0:(qpos[0]-1)]
                 _3p_non_temp = seq[qpos[1]:]
                 _5p_umi = ''  # UMI information is lost when using common sequences
