@@ -49,7 +49,15 @@ class SWIPE_align:
         self.common_seqs_fnam = common_seqs
         self.common_seqs_dict = dict() # map common sequences to index
         self.from_UMIdir = from_UMIdir
-
+        # Read score matrix to define match/mismatch scores:
+        self.nt_chars = 'ATGC'
+        score_mat_dict = read_scoremat(score_mat)
+        self.match_score = score_mat_dict['A']['A']
+        self.mismatch_score = score_mat_dict['A']['T']
+        try:
+            self.Nmatch_score = score_mat_dict['A']['N']
+        except:
+            self.Nmatch_score = self.mismatch_score
         # Check files exists before starting:
         if self.from_UMIdir:
             self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
@@ -229,18 +237,24 @@ class SWIPE_align:
         elif not self.common_seqs_fnam is None:
             # Count the number of times a common sequence is observed:
             common_obs = np.zeros(self.Ncommon)
+            # Count the number of UMIs observed for a commen sequence:
+            UMI_obs_set = [set() for si in range(self.Ncommon)]
             with bz2.open(trimmed_fn, 'rt') as fh_in:
                 with open(trimmed_fasta_fn, 'wt') as fh_out:
                     for title, seq, qual in FastqGeneralIterator(fh_in):
                         if seq in self.common_seqs_dict: # Count commont sequence
                             seq_idx = self.common_seqs_dict[seq]
                             common_obs[seq_idx] += 1
+                            UMI = title.split()[-1].split(':')[-1]
+                            UMI_obs_set[seq_idx].add(UMI)
                         else: # Write sequence not found in common
                             fh_out.write('>{}\n{}\n'.format(title, seq))
+            UMI_obs = [len(UMI_set) for UMI_set in UMI_obs_set]
             # Write the common sequence observations to a file:
             common_obs_fn = '{}_common-seq-obs.json'.format(sample_name_unique)
             with open(common_obs_fn, 'w') as fh_out:
-                json.dump(common_obs.tolist(), fh_out)
+                obs_UMI_json = {'common_obs': common_obs.tolist(), 'UMI_obs': UMI_obs}
+                json.dump(obs_UMI_json, fh_out)
         else: # do not use common sequences
             # Convert reads to fasta as required by Swipe:
             with bz2.open(trimmed_fn, 'rt') as fh_bz:
@@ -375,14 +389,22 @@ class SWIPE_align:
                     query_hits['one_codon'] = True
                 else:
                     query_hits['one_codon'] = False
-                # Add qpos/dpos:
-                query_hits['qpos'] = [hit_dict['qpos'][didx] for didx in name_idx]
-                query_hits['dpos'] = [hit_dict['dpos'][didx] for didx in name_idx]
+                # Add qpos/dpos, but only for the first hit:
+                query_hits['qpos'] = hit_dict['qpos'][name_idx[0]]
+                query_hits['dpos'] = hit_dict['dpos'][name_idx[0]]
                 # Add alignment strings, but only for the first hit:
                 query_hits['qseq'] = hit_dict['qseq'][name_idx[0]]
                 query_hits['aseq'] = hit_dict['aseq'][name_idx[0]]
                 query_hits['dseq'] = hit_dict['dseq'][name_idx[0]]
                 query_hits['aligned'] = True
+                # Count the number of deletions and insertions:
+                query_hits['Ndel'] = query_hits['qseq'].count('-')
+                query_hits['Nins'] = query_hits['dseq'].count('-')
+                # Fraction of max alignment score:
+                numb_N = query_hits['dseq'].count('N')
+                max_match = len(query_hits['dseq']) - query_hits['Nins'] - numb_N
+                max_score = max_match * self.match_score + numb_N * self.Nmatch_score
+                query_hits['Fmax_score'] = query_hits['score'] / max_score
 
                 yield query, query_hits
             elif flush:
@@ -412,7 +434,8 @@ class SWIPE_align:
         if type(row) != str and not self.common_seqs_fnam is None:
             common_obs_fn = '{}_common-seq-obs.json'.format(sample_name_unique)
             with open(common_obs_fn, 'r') as fh_in:
-                common_obs = json.load(fh_in)
+                obs_UMI_json = json.load(fh_in)
+                common_obs = obs_UMI_json['common_obs']
 
         if self.verbose:
             print('  {}'.format(sample_name_unique), end='')
@@ -524,5 +547,26 @@ def indices(lst, element):
         except ValueError:
             return result
         result.append(offset)
+
+
+def read_scoremat(fnam):
+    # Read rows and columns into matrix:
+    mat = list()
+    with open(fnam) as fh:
+        for l in fh:
+            cols = l.split()
+            if cols[0] != '#':
+                mat.append(cols)
+
+    # Convert to dictionary:
+    scd = dict()
+    for i1, n1 in enumerate(mat[0]):
+        for r in mat[1:]:
+            try:
+                scd[n1][r[0]] = int(r[i1+1])
+            except:
+                scd[n1] = dict()
+                scd[n1][r[0]] = int(r[i1+1])
+    return(scd)
 
 
