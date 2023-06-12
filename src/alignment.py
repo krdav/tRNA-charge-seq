@@ -237,18 +237,24 @@ class SWIPE_align:
         elif not self.common_seqs_fnam is None:
             # Count the number of times a common sequence is observed:
             common_obs = np.zeros(self.Ncommon)
+            # Count the number of UMIs observed for a commen sequence:
+            UMI_obs_set = [set() for si in range(self.Ncommon)]
             with bz2.open(trimmed_fn, 'rt') as fh_in:
                 with open(trimmed_fasta_fn, 'wt') as fh_out:
                     for title, seq, qual in FastqGeneralIterator(fh_in):
                         if seq in self.common_seqs_dict: # Count commont sequence
                             seq_idx = self.common_seqs_dict[seq]
                             common_obs[seq_idx] += 1
+                            UMI = title.split()[-1].split(':')[-1]
+                            UMI_obs_set[seq_idx].add(UMI)
                         else: # Write sequence not found in common
                             fh_out.write('>{}\n{}\n'.format(title, seq))
+            UMI_obs = [len(UMI_set) for UMI_set in UMI_obs_set]
             # Write the common sequence observations to a file:
             common_obs_fn = '{}_common-seq-obs.json'.format(sample_name_unique)
             with open(common_obs_fn, 'w') as fh_out:
-                json.dump(common_obs.tolist(), fh_out)
+                obs_UMI_json = {'common_obs': common_obs.tolist(), 'UMI_obs': UMI_obs}
+                json.dump(obs_UMI_json, fh_out)
         else: # do not use common sequences
             # Convert reads to fasta as required by Swipe:
             with bz2.open(trimmed_fn, 'rt') as fh_bz:
@@ -428,7 +434,8 @@ class SWIPE_align:
         if type(row) != str and not self.common_seqs_fnam is None:
             common_obs_fn = '{}_common-seq-obs.json'.format(sample_name_unique)
             with open(common_obs_fn, 'r') as fh_in:
-                common_obs = json.load(fh_in)
+                obs_UMI_json = json.load(fh_in)
+                common_obs = obs_UMI_json['common_obs']
 
         if self.verbose:
             print('  {}'.format(sample_name_unique), end='')

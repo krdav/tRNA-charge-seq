@@ -29,10 +29,10 @@ class STATS_collection:
                                  'unique_annotation', 'tRNA_annotation_len', \
                                  'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', \
                                  'codon', 'anticodon', 'amino_acid', '5p_cover', '3p_cover', \
-                                 '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', 'count']
+                                 '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', 'UMIcount', 'count']
         self.stats_csv_header_type = [str, bool, str, str, int, str, str, str, int, float, \
                                       int, int, str, int, int, int, str, str, str, str, str, \
-                                      bool, bool, str, str, str, str, int]
+                                      bool, bool, str, str, str, str, int, int]
         self.stats_csv_header_td = {nam:tp for nam, tp in zip(self.stats_csv_header, self.stats_csv_header_type)}
         # Here: could add number of gaps, or maybe a boolean, indicating if the faction or align score to max is above a threshold
         self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'species', \
@@ -274,6 +274,7 @@ class STATS_collection:
                 _3p_bc = row_exist_or_none(row, 'barcode_seq')
                 # For "non-common" sequences multiple reads
                 # have not been collapsed:
+                UMIcount = 1
                 count = 1
 
                 # Print line to output csv file:
@@ -282,7 +283,7 @@ class STATS_collection:
                             Ndel, Nins, unique_annotation, \
                             tRNA_annotation_len, align_5p_idx, align_3p_idx, align_5p_nt, \
                             align_3p_nt, codon, anticodon, amino_acid, _5p_cover, _3p_cover, \
-                            _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc, count]
+                            _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc, UMIcount, count]
                 csv_line = ','.join(map(str, line_lst))
                 print(csv_line, file=stats_fh)
 
@@ -292,7 +293,9 @@ class STATS_collection:
         # Read common sequences observations for this sample:
         common_obs_fn = '{}/{}_common-seq-obs.json'.format(self.align_dir_abs, row['sample_name_unique'])
         with open(common_obs_fn, 'r') as fh_in:
-            common_obs = json.load(fh_in)
+            obs_UMI_json = json.load(fh_in)
+            common_obs = obs_UMI_json['common_obs']
+            UMI_obs = obs_UMI_json['UMI_obs']
 
         # Open the alignment results:
         SWres_fnam = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, 'common-seqs')
@@ -352,6 +355,7 @@ class STATS_collection:
                 _5p_umi = ''  # UMI information is lost when using common sequences
                 _3p_bc = row_exist_or_none(row, 'barcode_seq')
                 # For common sequences the add the read count:
+                UMIcount = int(UMI_obs[readID_int])
                 count = int(common_obs[readID_int])
 
                 # Print line to output csv file:
@@ -360,7 +364,7 @@ class STATS_collection:
                             Ndel, Nins, unique_annotation, \
                             tRNA_annotation_len, align_5p_idx, align_3p_idx, align_5p_nt, \
                             align_3p_nt, codon, anticodon, amino_acid, _5p_cover, _3p_cover, \
-                            _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc, count]
+                            _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc, UMIcount, count]
                 csv_line = ','.join(map(str, line_lst))
                 print(csv_line, file=stats_fh)
 
