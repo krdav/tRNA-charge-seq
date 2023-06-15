@@ -562,13 +562,17 @@ class UMI_trim:
     Keyword arguments:
     UMI_end -- Set of nucleotides posible on the last UMI position (default {'T', 'C'})
     overwrite_dir -- Overwrite previous UMI trim folder (default False)
+    check_input -- Check if input files exist (default True)
+    UMI_len -- UMI length (default 10)
+    UMI_bins -- Number of possible UMIs (default 4^9 x 2)
     '''
     def __init__(self, dir_dict, sample_df, UMI_end={'T', 'C'}, \
-                 overwrite_dir=False, check_input=True):
+                 overwrite_dir=False, check_input=True, UMI_len=10, \
+                 UMI_bins=4**9*2):
         # Calculate the number of possible UMIs,
         # 9x random nt. (A/G/T/C) and one purine (A/G)
-        self.n_bins = 4**9 * 2
-        self.UMI_len = 10
+        self.UMI_bins = UMI_bins
+        self.UMI_len = UMI_len
         # The 5' purine on the oligo end
         # turns into a pyrimidine on the read:
         self.UMI_end = UMI_end
@@ -657,7 +661,7 @@ class UMI_trim:
         
         # Calculate and return the observed and expected UMI count:
         N_umi_obs = len(UMIs)
-        N_umi_exp = self.n_bins*(1-((self.n_bins-1) / self.n_bins)**Nseqs)
+        N_umi_exp = self.UMI_bins*(1-((self.UMI_bins-1) / self.UMI_bins)**Nseqs)
         return([row['sample_name_unique'], Nseqs, N_umi_obs, N_umi_exp])
 
     def _collect_stats(self, results):
