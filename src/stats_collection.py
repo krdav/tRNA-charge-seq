@@ -19,28 +19,31 @@ class STATS_collection:
     check_exists -- Check if input files exist (default True)
     reads_SW_sorted -- Assume reads and SW results are sorted in the same order. This gives a massive memory saving. (default True)
     from_UMIdir -- Is the input data from a folder made with the UMI_trim class? (default True)
+    max_5p_non_temp -- Maximum length of 5p non templated nucleotides (default 10)
+    UMI_bins -- Number of possible UMIs (default 4^9 x 2)
     '''
     def __init__(self, dir_dict, tRNA_data, sample_df, common_seqs=None, \
                  ignore_common_count=False, check_exists=True, overwrite_dir=False, \
-                 reads_SW_sorted=True, from_UMIdir=True):
+                 reads_SW_sorted=True, from_UMIdir=True, max_5p_non_temp=10, \
+                 UMI_bins=4**9*2):
         self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', \
                                  'sample_name', 'replicate', 'barcode', 'species', 'tRNA_annotation', \
                                  'align_score', 'fmax_score', 'Ndeletions', 'Ninsertions', \
                                  'unique_annotation', 'tRNA_annotation_len', \
                                  'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', \
                                  'codon', 'anticodon', 'amino_acid', '5p_cover', '3p_cover', \
-                                 '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', 'UMIcount', 'count']
+                                 '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', \
+                                 'align_gap', 'fmax_score>0.9', 'UMIcount', 'count']
         self.stats_csv_header_type = [str, bool, str, str, int, str, str, str, int, float, \
                                       int, int, str, int, int, int, str, str, str, str, str, \
-                                      bool, bool, str, str, str, str, int, int]
+                                      bool, bool, str, str, str, str, bool, bool, int, int]
         self.stats_csv_header_td = {nam:tp for nam, tp in zip(self.stats_csv_header, self.stats_csv_header_type)}
-        # Here: could add number of gaps, or maybe a boolean, indicating if the faction or align score to max is above a threshold
         self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'species', \
                                'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', \
                                '5p_cover', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', \
-                               'count']
+                               'align_gap', 'fmax_score>0.9', 'UMIcount', 'count']
         self.stats_agg_cols_type = [str, str, int, str, str, str, int, bool, \
-                                    bool, str, str, str, str, int]
+                                    bool, str, str, str, str, bool, bool, int, int]
         self.stats_agg_cols_td = {nam:tp for nam, tp in zip(self.stats_agg_cols, self.stats_agg_cols_type)}
 
         # Input:
@@ -50,6 +53,8 @@ class STATS_collection:
         self.common_seqs_info = dict() # Name to sequence for common sequence
         self.reads_SW_sorted = reads_SW_sorted
         self.from_UMIdir = from_UMIdir
+        self.max_5p_non_temp = max_5p_non_temp
+        self.UMI_bins = UMI_bins
 
         # Check files exists before starting:
         self.align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
@@ -173,10 +178,19 @@ class STATS_collection:
             # as an empty string and not as NaN.
             stat_df = pd.read_csv(stats_fh, keep_default_na=False, dtype=self.stats_csv_header_td)
 
+        # Check and warn if the UMI count exceeds 1/100th
+        # of the number of UMI bins. If the UMI count is too
+        # high it will be underestimating the real count.
+        UMI_high_count = sum(stat_df['UMIcount'] > int(self.UMI_bins/100))
+        if UMI_high_count > 0:
+            warnings.warn('Warning: {} rows with more than {} UMI counts for sample: {}'.format(UMI_high_count, \
+                                                                                                int(self.UMI_bins/100), \
+                                                                                                row['sample_name_unique']))
+
         # Aggregate dataframe and write as CSV file:
-        # Here: also filter sequences with long 5p_non-temp sequences (these are likely template switch products)
-        row_mask = (stat_df['3p_cover']) & (stat_df['3p_non-temp'] == '')
-        agg_df = stat_df[row_mask].groupby(self.stats_agg_cols[:-1], as_index=False).agg({"count": "sum"})
+        row_mask = (stat_df['3p_cover']) & (stat_df['3p_non-temp'] == '') & \
+                   np.array([len(_5p_nt) <= self.max_5p_non_temp for _5p_nt in stat_df['5p_non-temp']])
+        agg_df = stat_df[row_mask].groupby(self.stats_agg_cols[:-2], as_index=False).agg({"count": "sum", "UMIcount": "sum"})
         agg_df.to_csv(stats_agg_fnam, header=True, index=False)
 
         return(stats_agg_fnam)
@@ -272,6 +286,15 @@ class STATS_collection:
                 _5p_non_temp = read_seq[0:(qpos[0]-1)]
                 _3p_non_temp = read_seq[qpos[1]:]
                 _3p_bc = row_exist_or_none(row, 'barcode_seq')
+                # Make booleans for gap and align score:
+                if Ndel > 0 or Nins > 0:
+                    align_gap = True
+                else:
+                    align_gap = False
+                if fmax_score > 0.9:
+                    fmax_score_09 = True
+                else:
+                    fmax_score_09 = False
                 # For "non-common" sequences multiple reads
                 # have not been collapsed:
                 UMIcount = 1
@@ -283,7 +306,8 @@ class STATS_collection:
                             Ndel, Nins, unique_annotation, \
                             tRNA_annotation_len, align_5p_idx, align_3p_idx, align_5p_nt, \
                             align_3p_nt, codon, anticodon, amino_acid, _5p_cover, _3p_cover, \
-                            _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc, UMIcount, count]
+                            _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc, \
+                            align_gap, fmax_score_09, UMIcount, count]
                 csv_line = ','.join(map(str, line_lst))
                 print(csv_line, file=stats_fh)
 
@@ -354,6 +378,15 @@ class STATS_collection:
                 _3p_non_temp = seq[qpos[1]:]
                 _5p_umi = ''  # UMI information is lost when using common sequences
                 _3p_bc = row_exist_or_none(row, 'barcode_seq')
+                # Make booleans for gap and align score:
+                if Ndel > 0 or Nins > 0:
+                    align_gap = True
+                else:
+                    align_gap = False
+                if fmax_score > 0.9:
+                    fmax_score_09 = True
+                else:
+                    fmax_score_09 = False
                 # For common sequences the add the read count:
                 UMIcount = int(UMI_obs[readID_int])
                 count = int(common_obs[readID_int])
@@ -364,7 +397,8 @@ class STATS_collection:
                             Ndel, Nins, unique_annotation, \
                             tRNA_annotation_len, align_5p_idx, align_3p_idx, align_5p_nt, \
                             align_3p_nt, codon, anticodon, amino_acid, _5p_cover, _3p_cover, \
-                            _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc, UMIcount, count]
+                            _5p_non_temp, _3p_non_temp, _5p_umi, _3p_bc, \
+                            align_gap, fmax_score_09, UMIcount, count]
                 csv_line = ','.join(map(str, line_lst))
                 print(csv_line, file=stats_fh)
 
