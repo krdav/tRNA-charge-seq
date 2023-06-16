@@ -31,31 +31,43 @@ class TRNA_plot:
     pull_default -- Pull sample_df from default location in the alignment folder
     stats_fnam -- Filename for the aggregated stats csv file made during stats collection. If None is specified trying to look it up in the stats collection dir under ALL_stats_aggregate.csv (default None)
     overwrite_dir -- Overwrite old plotting folder if any exists (default False)
+    use_UMIcount -- Use UMI counts instead of read counts (default True)
+    excl_align_gap -- Exclude all alignments with a gap (default False)
+    excl_09_fmax -- Exclude all alignments with an alignment score less than 90% of maximum for the given length alignment (default False)
     '''
     def __init__(self, dir_dict, sample_df=None, stats_fnam=None, \
-                 pull_default=False, overwrite_dir=False):
+                 pull_default=False, overwrite_dir=False, \
+                 use_UMIcount=True, excl_align_gap=False, excl_09_fmax=False):
         self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', \
-                                 'sample_name', 'replicate', 'barcode', 'tRNA_annotation', \
-                                 'align_score', 'unique_annotation', 'tRNA_annotation_len', \
+                                 'sample_name', 'replicate', 'barcode', 'species', 'tRNA_annotation', \
+                                 'align_score', 'fmax_score', 'Ndeletions', 'Ninsertions', \
+                                 'unique_annotation', 'tRNA_annotation_len', \
                                  'align_5p_idx', 'align_3p_idx', 'align_5p_nt', 'align_3p_nt', \
                                  'codon', 'anticodon', 'amino_acid', '5p_cover', '3p_cover', \
-                                 '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', 'count']
-        self.stats_csv_header_type = [str, bool, str, str, int, str, str, int, str, int, \
-                                      int, int, str, str, str, str, str, bool, bool, \
-                                      str, str, str, str, int]
+                                 '5p_non-temp', '3p_non-temp', '5p_UMI', '3p_BC', \
+                                 'align_gap', 'fmax_score>0.9', 'UMIcount', 'count']
+        self.stats_csv_header_type = [str, bool, str, str, int, str, str, str, int, float, \
+                                      int, int, str, int, int, int, str, str, str, str, str, \
+                                      bool, bool, str, str, str, str, bool, bool, int, int]
         self.stats_csv_header_td = {nam:tp for nam, tp in zip(self.stats_csv_header, self.stats_csv_header_type)}
-        self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', \
+        self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'species', \
                                'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', \
                                '5p_cover', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', \
-                               'count']
-        self.stats_agg_cols_type = [str, str, int, str, str, int, bool, \
-                                    bool, str, str, str, str, int]
+                               'align_gap', 'fmax_score>0.9', 'UMIcount', 'count']
+        self.stats_agg_cols_type = [str, str, int, str, str, str, int, bool, \
+                                    bool, str, str, str, str, bool, bool, int, int]
         self.stats_agg_cols_td = {nam:tp for nam, tp in zip(self.stats_agg_cols, self.stats_agg_cols_type)}
 
         # Input:
         self.dir_dict = dir_dict
-        self.charge_df = None
         self.charge_filt = dict()
+        self.excl_align_gap = excl_align_gap
+        self.excl_09_fmax = excl_09_fmax
+        self.use_UMIcount = use_UMIcount
+        if self.use_UMIcount:
+            self.count_col = 'UMIcount'
+        else:
+            self.count_col = 'count'
 
         self.stats_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['stats_dir'])
         # Attempt to load sample_df from default path:
@@ -108,6 +120,23 @@ class TRNA_plot:
         self.all_stats['single_aa'] = single_aa
         self.all_stats['mito_codon'] = ['mito_tRNA' in anno for anno in self.all_stats['tRNA_annotation'].values]
         self.all_stats['Ecoli_ctr'] = ['Escherichia_coli' in anno and sp != 'ecoli' for sp, anno in zip(self.all_stats['species'].values, self.all_stats['tRNA_annotation'].values)]
+        # Add new columns to stats_agg:
+        self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'species', \
+                               'tRNA_annotation', 'tRNA_anno_short', 'tRNA_annotation_len', 'unique_annotation', \
+                               '5p_cover', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', 'AA_letter', \
+                               'AA_codon', 'single_codon', 'single_aa', 'mito_codon', 'Ecoli_ctr', \
+                               'align_gap', 'fmax_score>0.9', 'UMIcount', 'count']
+        self.stats_agg_cols_td = {'sample_name_unique': str, 'sample_name': str, 'replicate': int, \
+                                  'barcode': str, 'species': str, 'tRNA_annotation': str, 'tRNA_anno_short': str, \
+                                  'tRNA_annotation_len': int, 'unique_annotation': bool, \
+                                  '5p_cover': bool, 'align_3p_nt': str, 'codon': str, 'anticodon': str, 'amino_acid': str, 'AA_letter': str, \
+                                  'AA_codon': str, 'single_codon': bool, 'single_aa': bool, 'mito_codon': bool, 'Ecoli_ctr': bool, \
+                                  'align_gap': bool, 'fmax_score>0.9': bool, 'UMIcount': int, 'count': int}
+
+        # Reorder columns:
+        self.all_stats = self.all_stats.loc[:, self.stats_agg_cols].copy()
+        # Calculate charge and create dataframe:
+        self._get_charge_df()
 
         # Make output folder:
         self._make_dir(overwrite_dir)
@@ -124,67 +153,34 @@ class TRNA_plot:
             else:
                 print('Folder exists and overwrite set to false... Doing nothing.')
 
-    def get_charge_df(self):
-        '''Probably put this under __init__'''
+    def _get_charge_df(self):
         # Filter and group to only extract rows
         # valid for charge determination:
-        stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', \
-                          'tRNA_annotation', 'tRNA_anno_short', 'tRNA_annotation_len', \
-                          'unique_annotation', 'codon', 'anticodon', 'AA_codon', 'amino_acid', \
-                          'single_codon', 'single_aa', 'mito_codon', 'Ecoli_ctr', 'AA_letter', \
-                          'align_3p_nt', 'count']
-        row_mask = ((self.all_stats['align_3p_nt'] == 'A') | (self.all_stats['align_3p_nt'] == 'C'))
-        all_stats_filt = self.all_stats.loc[row_mask, stats_agg_cols]
-        all_stats_filt = all_stats_filt.groupby(stats_agg_cols[:-1], as_index=False).agg({"count": "sum"}).reset_index(drop=True)
+        row_mask = (self.all_stats['count'] > 0) # all True (dummy)
+        if self.excl_align_gap:
+            row_mask &= (~self.all_stats['align_gap'])
+        if self.excl_09_fmax:
+            row_mask &= (~self.all_stats['fmax_score>0.9'])
+        charge_df = self.all_stats.loc[row_mask, self.stats_agg_cols].copy()
+        charge_df = charge_df.groupby(self.stats_agg_cols[:-2], as_index=False).agg({'count': "sum", 'UMIcount': "sum"}).reset_index(drop=True)
 
-        # Count A/C endings:
-        ac_dict = dict()
-        for snu, tan, _3nt, count in zip(all_stats_filt['sample_name_unique'], \
-                                         all_stats_filt['tRNA_annotation'], \
-                                         all_stats_filt['align_3p_nt'], \
-                                         all_stats_filt['count']):
-            key = (snu, tan)
-            if key in ac_dict:
-                ac_dict[key][_3nt] = count
-            else:
-                ac_dict[key] = dict()
-                ac_dict[key][_3nt] = count
-
-        # Add 0 count if count is missing:
-        for key in ac_dict.keys():
-            if 'A' not in ac_dict[key]:
-                ac_dict[key]['A'] = 0
-            elif 'C' not in ac_dict[key]:
-                ac_dict[key]['C'] = 0
-
-        # Make charge dataframe:
-        row_mask = np.zeros(len(all_stats_filt), dtype=bool)
-        bag = set() # avoid duplicates
-        a_count = list()
-        c_count = list()
-        for row_idx, key in enumerate(zip(all_stats_filt['sample_name_unique'], all_stats_filt['tRNA_annotation'])):    
-            # Take the first encounter of a row:
-            if key in bag:
-                continue
-            else:
-                bag.add(key)
-            row_mask[row_idx] = True
-
-            # Get and add the A/C count:
-            a_count.append(ac_dict[key]['A'])
-            c_count.append(ac_dict[key]['C'])
-
-        # Extract the dataframe and calculate the charge:
-        charge_df = all_stats_filt.loc[row_mask, stats_agg_cols[:-2]].copy()
-        charge_df['A_count'] = a_count
-        charge_df['C_count'] = c_count
-        charge_df['count'] = charge_df['A_count']+charge_df['C_count']
-        charge_df['charge'] = 100*charge_df['A_count'] / charge_df['count']
-
-        # Calculate read per million (RPM).
-        # Notice, the Ecoli control is not counted in the total:
-        df_count = charge_df[~charge_df['Ecoli_ctr']].groupby(['sample_name_unique'], as_index=False).agg({"count": "sum"}).reset_index(drop=True)
+        # Count A and C endings:
+        charge_df['A_count'] = [ct if nt == 'A' else 0 for ct, nt in zip(charge_df[self.count_col], charge_df['align_3p_nt'])]
+        charge_df['C_count'] = [ct if nt == 'C' else 0 for ct, nt in zip(charge_df[self.count_col], charge_df['align_3p_nt'])]
+        # Group transcripts with different 3p nt.
+        # then calculate charge:
+        charge_df_cols = copy.deepcopy(self.stats_agg_cols)
+        charge_df_cols.remove('align_3p_nt')
+        charge_df_cols.remove('align_gap')
+        charge_df_cols.remove('fmax_score>0.9')
+        charge_df_cols.remove('UMIcount')
+        charge_df_cols.remove('count')
+        charge_df_cols.extend(['A_count', 'C_count'])
+        charge_df = charge_df.groupby(charge_df_cols[:-2], as_index=False).agg({'A_count': "sum", 'C_count': "sum"}).reset_index(drop=True)
+        charge_df['count'] = charge_df['A_count'] + charge_df['C_count']
+        charge_df['charge'] = 100 * charge_df['A_count'] / charge_df['count']
         # Add the sample total count to the rows:
+        df_count = charge_df[~charge_df['Ecoli_ctr']].groupby(['sample_name_unique'], as_index=False).agg({'count': "sum"}).reset_index(drop=True)
         charge_df = charge_df.merge(df_count, on='sample_name_unique', suffixes=('', '_sample_tot'))
         # Calculated the RPM and get rid of the total count:
         charge_df['RPM'] = charge_df['count'] / (charge_df['count_sample_tot'] / 1e6)
@@ -230,15 +226,11 @@ class TRNA_plot:
     def write_charge_df(self, fnam='charge_df.csv'):
         '''qwerty'''
         fnam_abs = '{}/{}.pdf'.format(self.plotting_dir_abs, fnam)
-        if self.charge_df is None:
-            self.get_charge_df()
         self.charge_df.to_csv(fnam_abs, header=True, index=False)
 
     def plot_Ecoli_ctr(self, plot_name='ecoli-ctr_charge_plot', sample_list=None,
                        charge_plot=True, min_obs=1, \
                        sample_list_exl=None, bc_list_exl=None):
-        if self.charge_df is None:
-            self.get_charge_df()
 
         if charge_plot:
             y_axis = 'charge'
@@ -297,8 +289,6 @@ class TRNA_plot:
     def plot_abundance(self, plot_type='aa', group=False, charge_plot=False, \
         plot_name='abundance_plot_aa', min_obs=100, sample_list=None, verbose=True, \
         sample_list_exl=None, bc_list_exl=None):
-        if self.charge_df is None:
-            self.get_charge_df()
 
         if plot_type == 'aa':
             charge_df_type = self.charge_filt['aa'].copy()
@@ -476,8 +466,6 @@ class TRNA_plot:
         plot_type='aa', charge_plot=False, log=False, plot_name='abundance_corr_plot_aa', \
         min_obs=100, sample_list=None, verbose=True, sample_list_exl=None, \
         bc_list_exl=None, one2one_corr=False):
-        if self.charge_df is None:
-            self.get_charge_df()
 
         if plot_type == 'aa':
             charge_df_type = self.charge_filt['aa'].copy()
@@ -670,7 +658,7 @@ class TRNA_plot:
         try:
             with warnings.catch_warnings(): # ignoring a warning about array assignment
                 warnings.simplefilter(action='ignore', category=FutureWarning)
-                counts_mat = lm.alignment_to_matrix(seq_list, sample_stats.loc[mask, 'count'].values)
+                counts_mat = lm.alignment_to_matrix(seq_list, sample_stats.loc[mask, self.count_col].values)
         except:
             counts_mat = False
         return([counts_mat, title])
@@ -746,7 +734,7 @@ class TRNA_plot:
         sample_list = set(sample_list)
 
         # Columns used for data aggregation:
-        self.aa_cov_cols = ['sample_name_unique', 'tRNA_annotation_len', 'align_5p_idx', 'align_3p_idx', 'AA_letter', 'count']
+        self.aa_cov_cols = ['sample_name_unique', 'tRNA_annotation_len', 'align_5p_idx', 'align_3p_idx', 'AA_letter', self.count_col]
         # Check data exists:
         for _, row in self.sample_df.iterrows():
             stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
@@ -896,7 +884,10 @@ class TRNA_plot:
         sample_stats['AA_letter'] = [AAA2A[AAA] for AAA in sample_stats['amino_acid'].values]
 
         # Choose rows from requested compartment:
-        type_mask = (sample_stats['3p_cover'] == True) & (sample_stats['single_codon']) & (~sample_stats['Ecoli_ctr']) & (sample_stats['AA_letter'].apply(len) == 1)
+        type_mask = (sample_stats['3p_cover'] == True) & \
+                    (sample_stats['single_codon']) & \
+                    (~sample_stats['Ecoli_ctr']) & \
+                    (sample_stats['AA_letter'].apply(len) == 1)
         if row['compartment'] == 'mito':
             type_mask &= (sample_stats['mito_codon'])
         else:
@@ -905,7 +896,7 @@ class TRNA_plot:
         # Generate dataframe with coverage information.
         # The coverage can be calculated from the count and align_5p_idx.
         cov_df = sample_stats.loc[type_mask, self.aa_cov_cols].copy()
-        cov_df = cov_df.groupby(self.aa_cov_cols[:-1], as_index=False).agg({"count": "sum"}).reset_index(drop=True)
+        cov_df = cov_df.groupby(self.aa_cov_cols[:-1], as_index=False).agg({self.count_col: "sum"}).reset_index(drop=True)
 
         # tRNAs differ in length, so to plot coverage on the same x-axis,
         # we map the coverage of each tRNA to the longest tRNA in the set.
@@ -925,7 +916,7 @@ class TRNA_plot:
         cov_count = np.zeros((len(aa_order), max_len))
         # Each row has an amino acid letter, align_5p_idx and a count.
         # Insert these into the matrix:
-        for aa_let, _5pi, alen, count in zip(cov_df['AA_letter'], cov_df['align_5p_idx'], cov_df['tRNA_annotation_len'], cov_df['count']):
+        for aa_let, _5pi, alen, count in zip(cov_df['AA_letter'], cov_df['align_5p_idx'], cov_df['tRNA_annotation_len'], cov_df[self.count_col]):
             aa_idx = aa_order[aa_let]
             _5p_idx = _5pi - 1 # shift alignment index to 0 indexing
             _5p_idx_trans = len_map_len[alen][_5p_idx]
@@ -963,7 +954,7 @@ class TRNA_plot:
                 cov_count_sum[i] += cov_count_sum[i-1]
         # Add an additional row of zeroes:
         cov_count_sum = np.vstack((np.zeros(cov_count_sum.shape[1]), cov_count_sum))
-        title_info = (row['sample_name_unique'], cov_df['count'].sum())
+        title_info = (row['sample_name_unique'], cov_df[self.count_col].sum())
         return([cov_count_sum, aa_ordered_list, title_info])
 
 
