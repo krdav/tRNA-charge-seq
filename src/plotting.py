@@ -223,10 +223,18 @@ class TRNA_plot:
         self.charge_filt['tr'] = charge_df_tr
         self.charge_df = charge_df
 
-    def write_charge_df(self, fnam='charge_df.csv'):
+    def write_charge_df(self, df_type='transcript', fnam='charge_df'):
         '''qwerty'''
-        fnam_abs = '{}/{}.pdf'.format(self.plotting_dir_abs, fnam)
-        self.charge_df.to_csv(fnam_abs, header=True, index=False)
+        if df_type == 'aa':
+            charge_df_type = self.charge_filt['aa'].copy()
+        elif df_type == 'codon':
+            charge_df_type = self.charge_filt['codon'].copy()
+        elif df_type == 'transcript':
+            charge_df_type = self.charge_filt['tr'].copy()
+        else:
+            raise Exception('Unknown plot type specified: {}\nValid strings are either either "aa", "codon" or "transcript".'.format(plot_type))
+        fnam_abs = '{}/{}.csv'.format(self.plotting_dir_abs, fnam)
+        charge_df_type.to_csv(fnam_abs, header=True, index=False)
 
     def plot_Ecoli_ctr(self, plot_name='ecoli-ctr_charge_plot', sample_list=None,
                        charge_plot=True, min_obs=1, \
@@ -596,7 +604,9 @@ class TRNA_plot:
                 pp.savefig(fig, bbox_inches='tight')
                 plt.close(fig)
 
-    def plot_non_temp(self, end='5p', plot_name='_5p-non-template_logo', n_jobs=4, seq_len_percentile=99, seq_len=None, _3p_cover=False, verbose=True):
+    def plot_non_temp(self, end='5p', plot_name='_5p-non-template_logo', \
+                      n_jobs=4, seq_len_percentile=99, seq_len=None, \
+                      _3p_cover=False, verbose=True, plot_log=False):
         if end == '3p':
             col_sele = '3p_non-temp'
         elif end == '5p':
@@ -627,8 +637,9 @@ class TRNA_plot:
 
         # Make logo:
         self._run_logomaker(results, plot_name)
-        # Also make it as log10 transformed:
-        self._run_logomaker(results, plot_name, log10=True)
+        if plot_log:
+            # Also make it as log10 transformed:
+            self._run_logomaker(results, plot_name, log10=True)
 
     def _collect_no_temp_mat(self, index, row):
         if self.verbose:
@@ -765,7 +776,7 @@ class TRNA_plot:
         with PdfPages(cov_fnam) as pp:
             # Loop through and generate plots for each sample:
             for res in results:
-                cov_count_sum, aa_ordered_list, title_info = res
+                cov_count, cov_count_sum, aa_ordered_list, title_info = res
                 if verbose:
                     print('  {}'.format(title_info[0]), end='')
 
@@ -800,7 +811,7 @@ class TRNA_plot:
 
                         # Add title and axis labels:
                         if aa_norm:
-                            axes[0].set_ylabel("Normalized coverage (amino acids equally weighed at 3')")
+                            axes[0].set_ylabel("Normalized coverage\n(amino acids equally weighed at 3')")
                         elif y_norm:
                             axes[0].set_ylabel("Normalized coverage (%)")
                         else:
@@ -809,7 +820,7 @@ class TRNA_plot:
                         axes[1].set_title(title)
 
                     elif plot_type == 'needle': # Needle-like type coverage plot
-                        # Eeach "needle" follows the midpoint of
+                        # Each "needle" follows the midpoint of
                         # the summed count for the 3p (last) position:
                         last_col = cov_count_sum[:, -1]
                         last_col_mid = np.zeros(last_col.shape[0]-1)
@@ -847,7 +858,9 @@ class TRNA_plot:
 
                         # Add title and axis labels:
                         if aa_norm:
-                            ax.set_ylabel("Normalized coverage (amino acids equally weighed at 3')")
+                            ax.set_ylabel("Normalized coverage\n(amino acids equally weighed at 3')")
+                        elif y_norm:
+                            ax.set_ylabel("Normalized coverage (%)")
                         else:
                             ax.set_ylabel('Read count')
                         ax.set_xlabel("5' to 3' index (mapped to longest tRNA)");
@@ -859,7 +872,7 @@ class TRNA_plot:
                     plt.close(fig)
                 except Exception as err:
                     pass
-                    # print(err)
+                    print(err)
 
     def _collect_coverage_data(self, index, row):
         print('  {}'.format(row['sample_name_unique']), end='')
@@ -955,7 +968,7 @@ class TRNA_plot:
         # Add an additional row of zeroes:
         cov_count_sum = np.vstack((np.zeros(cov_count_sum.shape[1]), cov_count_sum))
         title_info = (row['sample_name_unique'], cov_df[self.count_col].sum())
-        return([cov_count_sum, aa_ordered_list, title_info])
+        return([cov_count, cov_count_sum, aa_ordered_list, title_info])
 
 
 
