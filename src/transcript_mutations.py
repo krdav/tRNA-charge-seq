@@ -27,10 +27,13 @@ class TM_analysis:
     This class is used generate statistics over the observed
     transcript mutations i.e. the mismatches and gaps in the
     alignment between a read and its tRNA transcript.
+
+    Keyword arguments:
+    use_UMIcount -- Use UMI counts instead of read counts (default True)
     '''
     def __init__(self, dir_dict, sample_df, tRNA_database, \
                  pull_default=False, common_seqs=None, ignore_common_count=False, \
-                 overwrite_dir=False, verbose=True):
+                 overwrite_dir=False, verbose=True, use_UMIcount=True):
         self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', \
                                  'sample_name', 'replicate', 'barcode', 'tRNA_annotation', \
                                  'align_score', 'unique_annotation', 'tRNA_annotation_len', \
@@ -51,6 +54,11 @@ class TM_analysis:
         self.char_list = [c for c in self.char_str]
         self.char_dict = {c: i for i, c in enumerate(self.char_str)}
         self.tr_muts_masked = None
+        self.use_UMIcount = use_UMIcount
+        if self.use_UMIcount:
+            self.count_col = 'UMIcount'
+        else:
+            self.count_col = 'count'
         
         self.stats_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['stats_dir'])
         self.align_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['align_dir'])
@@ -96,6 +104,7 @@ class TM_analysis:
                 self.tr_muts_tmp[species][record.id]['seq_len'] = seq_len
                 # Position specific count matrix:
                 self.tr_muts_tmp[species][record.id]['PSCM'] = np.zeros((seq_len, len(self.char_list)))
+                self.tr_muts_tmp[species][record.id]['RTstops'] = np.zeros(seq_len)
                 self.tr_muts_tmp[species][record.id]['mut_freq'] = np.zeros(seq_len)
                 self.tr_muts_tmp[species][record.id]['gap_freq'] = np.zeros(seq_len)
 
@@ -138,7 +147,7 @@ class TM_analysis:
 
     def find_muts(self, unique_anno=True, match_score=1, mismatch_score=-1, \
                   open_gap_score=-2, extend_gap_score=-1, n_jobs=4, verbose=True, \
-                  sample_list=None, fix_end=True):
+                  sample_list=None, max_5p_non_temp=10):
         self.verbose = verbose
         if self.verbose:
             print('Collecting stats from:', end='')
@@ -149,18 +158,19 @@ class TM_analysis:
         self.match_score, self.mismatch_score, self.open_gap_score, self.extend_gap_score = match_score, mismatch_score, open_gap_score, extend_gap_score
         
         # Find mutations in the transcripts for each file:
-        data = [(idx, row) for idx, row in self.sample_df.iterrows() if row['sample_name_unique'] in sample_list]
+        data = [(idx, row, max_5p_non_temp) for idx, row in self.sample_df.iterrows() if row['sample_name_unique'] in sample_list]
         with WorkerPool(n_jobs=n_jobs) as pool:
             results = pool.map(self._collect_transcript_muts, data)
         # Fill out the transcript mutations per sample:
         for unam_res in results:
             unam, res = unam_res
             self.tr_muts[unam] = res
-        # Fix ends if requested:
-        if fix_end:
-            self._fix_end()
+#        # Fix ends (if CC-end, due to oxidation/cleavage, turn into CCA-end):
+#        self._fix_end()
+#        # Fill in RT PCR stop frequency:
+#        self._RTstop()
 
-    def _collect_transcript_muts(self, index, row):
+    def _collect_transcript_muts(self, index, row, max_5p_non_temp):
         if self.verbose:
             print('  {}'.format(row['sample_name_unique']), end='')
 
@@ -207,15 +217,22 @@ class TM_analysis:
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
         with bz2.open(stats_fnam, 'rt', encoding="utf-8") as stats_fh:
             sample_stats = pd.read_csv(stats_fh, keep_default_na=False, dtype=self.stats_csv_header_td)
-        ID2anno = {rid: tan.split('@') for rid, tan, _3c in zip(sample_stats['readID'].values, sample_stats['tRNA_annotation'].values, sample_stats['3p_cover'].values) if _3c}
+        # Mask sequences with undesirable features:
+        row_mask = (sample_stats['3p_cover']) & (sample_stats['3p_non-temp'] == '') & \
+                   (sample_stats['5p_non-temp'].apply(len) <= max_5p_non_temp) & \
+                   ((sample_stats['align_3p_nt'] == 'A') | (sample_stats['align_3p_nt'] == 'C'))
+        sample_stats = sample_stats[row_mask]
+        # Collect the sequence count annotation(s):
+        ID2anno = dict()
+        for rid, tan, count in zip(sample_stats['readID'].values, sample_stats['tRNA_annotation'].values, sample_stats[self.count_col].values):
+            ID2anno[rid] = {'count': count, 'anno': tan.split('@')}
         sample_stats = None
         del sample_stats
         gc.collect()
 
         with open(dedup_tmp, 'r') as fh_dedup_in:
             for line in fh_dedup_in:
-                seq, seq_id, seq_count = line.split('\t')
-                seq_count = int(seq_count)
+                seq, seq_id, dedup_count = line.split('\t')
 
                 # Check if common sequence, then readID has changed:
                 if not self.common_seqs_fnam is None and seq in self.common_seqs_dict:
@@ -223,9 +240,12 @@ class TM_analysis:
                 else:
                     readID = seq_id
 
-                # Get list of annotations:
+                # Get list of annotations and the sequence count.
+                # Notice, the count can be either raw read count
+                # or UMI corrected counts:
                 if readID in ID2anno:
-                    anno_list = ID2anno[readID]
+                    anno_list = ID2anno[readID]['anno']
+                    seq_count = ID2anno[readID]['count']
                 else:
                     # Skip unaligned reads:
                     continue
@@ -277,21 +297,35 @@ class TM_analysis:
                                 count_mat[ti, self.char_dict[seq[qi]]] = weight
                         tr_muts_sp[species][anno]['PSCM'] += count_mat
 
-            # Convert the count matrix to dataframe
-            # calculate mutation/gap frequencies and return:
-            for anno in tr_muts_sp[species]:
-                tr_muts_sp[species][anno]['PSCM'] = pd.DataFrame(tr_muts_sp[species][anno]['PSCM'], columns=self.char_list)
-                if tr_muts_sp[species][anno]['PSCM'].max().max() > 0:
-                    # Mutation frequencies:
-                    freq_mut = self._calc_mut_freq(tr_muts_sp, anno, species, gap_only=False, min_count_show=0)
-                    tr_muts_sp[species][anno]['mut_freq'] = freq_mut
-                    # Gap frequencies:
-                    freq_gap = self._calc_mut_freq(tr_muts_sp, anno, species, gap_only=True, min_count_show=0)
-                    tr_muts_sp[species][anno]['gap_freq'] = freq_gap
         os.remove(dedup_tmp)
+        # Convert the count matrix to dataframe,
+        # calculate mutation/gap/RTstop frequencies and return:
+        for anno in tr_muts_sp[species]:
+            tr_muts_sp[species][anno]['PSCM'] = pd.DataFrame(tr_muts_sp[species][anno]['PSCM'], columns=self.char_list)
+            if tr_muts_sp[species][anno]['PSCM'].max().max() > 0:
+                # Mutation frequencies:
+                freq_mut = self._calc_mut_freq(tr_muts_sp, anno, species, gap_only=False, min_count_show=0)
+                tr_muts_sp[species][anno]['mut_freq'] = freq_mut
+                # Gap frequencies:
+                freq_gap = self._calc_mut_freq(tr_muts_sp, anno, species, gap_only=True, min_count_show=0)
+                tr_muts_sp[species][anno]['gap_freq'] = freq_gap
+                # Fix ends (if CC-end, due to oxidation/cleavage, turn into CCA-end):
+                end_obs = tr_muts_sp[species][anno]['PSCM']['C'].values[-2]
+                end_ar = np.zeros(len(self.char_list))
+                A_idx = self.char_list.index('A')
+                end_ar[A_idx] = end_obs
+                seq_len = tr_muts_sp[species][anno]['seq_len']
+                tr_muts_sp[species][anno]['PSCM'].loc[seq_len-1, :] = end_ar
+                # RT stops:
+                RTstops_arr = self._calc_RTstops(tr_muts_sp, anno, species)
+                tr_muts_sp[species][anno]['RTstops'] = RTstops_arr
+
         return((row['sample_name_unique'], tr_muts_sp))
  
     def _combine_tr_muts(self, sample_list, freq_avg_weighted=True):
+        '''
+        Combine mutation data from multiple samples.
+        '''
         sample_list_cp = copy.deepcopy(sample_list)
         tr_muts_combi = copy.deepcopy(self.tr_muts_tmp)
 
@@ -315,11 +349,13 @@ class TM_analysis:
                     tr_muts_combi[species][anno]['PSCM'] = sp_muts[species][anno]['PSCM'].copy()
                     tr_muts_combi[species][anno]['mut_freq'] = sp_muts[species][anno]['mut_freq']
                     tr_muts_combi[species][anno]['gap_freq'] = sp_muts[species][anno]['gap_freq']
+                    tr_muts_combi[species][anno]['RTstops'] = sp_muts[species][anno]['RTstops']
                 else:
                     tr_muts_combi[species][anno]['PSCM'] += sp_muts[species][anno]['PSCM'].copy()
                     # Take the cumulative average for the frequencies:
                     tr_muts_combi[species][anno]['mut_freq'] = (sp_muts[species][anno]['mut_freq'] + avg_count*tr_muts_combi[species][anno]['mut_freq']) / (avg_count+1)
                     tr_muts_combi[species][anno]['gap_freq'] = (sp_muts[species][anno]['gap_freq'] + avg_count*tr_muts_combi[species][anno]['gap_freq']) / (avg_count+1)
+                    tr_muts_combi[species][anno]['RTstops'] = (sp_muts[species][anno]['RTstops'] + avg_count*tr_muts_combi[species][anno]['RTstops']) / (avg_count+1)
             avg_count += 1
 
             # Get the frequency average weighted by total observations:
@@ -330,25 +366,19 @@ class TM_analysis:
                         continue
                     tr_muts_combi[species][anno]['mut_freq'] = self._calc_mut_freq(tr_muts_combi, anno, species, gap_only=False, min_count_show=0)
                     tr_muts_combi[species][anno]['gap_freq'] = self._calc_mut_freq(tr_muts_combi, anno, species, gap_only=True, min_count_show=0)
+                    tr_muts_combi[species][anno]['RTstops'] = self._calc_RTstops(tr_muts_combi, anno, species)
 
         if len(sample_list_cp) > 0:
             print('Following samples could not be found and therefore not combined: {}'.format(str(sample_list_cp)))
         return(tr_muts_combi)
 
-    def _fix_end(self):
-        for unam in self.tr_muts:
-            for species in self.tr_muts[unam]:
-                for anno in self.tr_muts[unam][species]:
-                    seq_len = self.tr_muts[unam][species][anno]['seq_len']
-                    if self.tr_muts[unam][species][anno]['PSCM'].max().max() > 0:
-                        end_obs = self.tr_muts[unam][species][anno]['PSCM']['C'].values[-2]
-                        end_ar = np.zeros(len(self.char_list))
-                        A_idx = self.char_list.index('A')
-                        end_ar[A_idx] = end_obs
-                        self.tr_muts[unam][species][anno]['PSCM'].loc[seq_len-1, :] = end_ar
-
     def plot_transcript_logo(self, topN=30, species='human', plot_name='tr-mut_logos', \
                              sample_list=None):
+        '''
+        Simple logo plot of the nucleotide/gap observations broken 
+        down by tRNA transcript (and species, if multiple exists in samples).
+        '''
+
         # Get the mutations combined for the requested samples:
         if sample_list is None:
             sample_list = list(self.tr_muts.keys())
@@ -380,7 +410,8 @@ class TM_analysis:
 
     def plot_transcript_cov(self, topN=50, species='human', plot_name='tr-cov_matrix', \
                             png_dpi=False, no_plot_return=False, mito=False, \
-                            sort_rows=True, sample_list=None, RTstops=False):
+                            sort_rows=True, sample_list=None, RTstops=False, \
+                            min_obs=100):
         # Get the mutations combined for the requested samples:
         if sample_list is None:
             sample_list = list(self.tr_muts.keys())
@@ -396,39 +427,28 @@ class TM_analysis:
         anno_topN = [anno_sorted[i][0] for i in range(topN)]
         for i in range(topN):
             anno = anno_topN[i]
+            seq_len = tr_muts_combi[species][anno]['seq_len']
             if mito and 'mito' not in anno:
                 continue
             # Count all observations for a given positions:
             counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1)
-            # Insert from right side so CCA is always indexed
-            # at the highest index:
-            obs_mat[i, -len(counts_all):] = counts_all
 
-        if not RTstops:
-            # The read count for each transcript is weighted so they all start of with
-            # the same coverage at the 3p and normalized so it sums to 100.
-            # Weigh each transcript:
-            obs_mat = obs_mat.T / obs_mat[:, -1]
-            # Normalize so coverage at 3p is 100:
-            obs_mat = 100 * obs_mat.T
-        else:
-            # Calculate the decrease in coverage on each position
-            # (referred to as RT stops). This is done by a column-wise
-            # operation from right to left:
-            stops_mat = np.zeros((topN, self.longest_tRNA))
-            for ci in range(self.longest_tRNA-1, -1, -1):
-                # np.divide setting 0/0 to 1 i.e. no observations, no stop:
-                freq_stop = 1 - np.divide(obs_mat[:, ci-1], obs_mat[:, ci],
-                                          out=np.ones_like(obs_mat[:, ci]),
-                                          where=obs_mat[:, ci]!=0)
-                stops_mat[:, ci] = freq_stop
-            # Mask the end of the transcript,
-            # since this is the natural stop:
-            for i in range(topN):
-                anno = anno_topN[i]
-                seq_len = tr_muts_combi[species][anno]['seq_len']
-                stops_mat[i, -seq_len] = 0
-            obs_mat = stops_mat
+            # RT stops are pre-calculated:
+            if RTstops:
+                RTstops_arr = tr_muts_combi[species][anno]['RTstops']
+                zero_mask = counts_all < min_obs
+                RTstops_arr[zero_mask] = 0
+                obs_mat[i, -seq_len:] = RTstops_arr
+            else:
+                # Insert from right side so CCA is always indexed
+                # at the highest index:
+                obs_mat[i, -seq_len:] = counts_all
+                # The read count for each transcript is weighted so they all start of with
+                # the same coverage at the 3p and normalized so it sums to 100.
+                # Weigh each transcript:
+                obs_mat = obs_mat.T / obs_mat[:, -1]
+                # Normalize so coverage at 3p is 100:
+                obs_mat = 100 * obs_mat.T
 
         # Transform mutation matrix to dataframe:
         seq_idx_str = list(map(str, range(obs_mat.shape[1])))
@@ -671,8 +691,12 @@ class TM_analysis:
                     plt.close(fig)
 
     def _sort_freq_diff(self, tr_muts_combi_s1, tr_muts_combi_s2, species, \
-                         min_count_show, gap_only, mito, topN_select, \
-                         list_to_sort=None):
+                        min_count_show, gap_only, mito, topN_select, \
+                        list_to_sort=None):
+        '''
+        Sort tRNA annotations according to the maximal difference
+        in mutation or gap frequency observed between two samples.
+        '''
         # Default, sort all annotations:
         if list_to_sort is None:
             anno_loop_list = tr_muts_combi_s1[species].keys()
@@ -710,7 +734,12 @@ class TM_analysis:
         topN_anno = [tup[0] for tup in sorted(topN_anno, key=lambda x: x[1], reverse=True)]
         return(topN_anno)
 
-    def _get_mut_freq_filted(self, tr_muts_combi, species, anno, min_count_show, gap_only):
+    def _get_mut_freq_filted(self, tr_muts_combi, species, anno, \
+                             min_count_show, gap_only):
+        '''
+        Filter the mutation or gap frequency array
+        by a minimum number of observations.
+        '''
         if gap_only:
             freq_mut = tr_muts_combi[species][anno]['gap_freq']
         else:
@@ -811,7 +840,10 @@ class TM_analysis:
             return((mut_mat_df, fig, sorted_anno))
 
     def _sort_anno(self, tr_muts_combi, species, mito=False):
-        # Sort according to observations:
+        '''
+        Sort annotations (and species) according to the number
+        of observations at the 3p end.
+        '''
         anno2obs = dict()
         for anno in tr_muts_combi[species]:
             # If mito is specified, skip non-mito annotations:
@@ -825,7 +857,8 @@ class TM_analysis:
         anno_sorted = sorted(anno2obs.items(), key=lambda x: x[1], reverse=True)
         return(anno_sorted)
 
-    def _calc_mut_freq(self, tr_muts_combi, anno, species, gap_only, min_count_show):
+    def _calc_mut_freq(self, tr_muts_combi, anno, species, \
+                       gap_only, min_count_show):
         tr_len = tr_muts_combi[species][anno]['seq_len']
         tr_seq = tr_muts_combi[species][anno]['seq']
 
@@ -857,6 +890,22 @@ class TM_analysis:
             # np.divide setting 0/0 to 1, i.e. no observation, no mutation
             freq_mut = 1 - np.divide(counts_cor, counts_all, out=np.ones_like(counts_cor), where=counts_all!=0)
         return(freq_mut.values)
+
+    def _calc_RTstops(self, tr_muts_combi, anno, species):
+        '''
+        Calculate the RT stops, also referred to as "termination signal"
+        in Wang et al. 2020.
+        Calculated as: 100 * (cov(i+1) - cov(i)) / cov(i+1)
+        '''
+        # Count all observations for a given positions:
+        counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1).values
+        counts_all_p1 = np.roll(counts_all, -1)
+        counts_all_p1[-1] = counts_all[-1]
+        # Calculate RTstops (similar to Wang et al. 2020):
+        RTstops_arr = 100 * np.divide((counts_all_p1 - counts_all), counts_all_p1, \
+                                      out=np.zeros_like(counts_all, dtype=np.float64), \
+                                      where=counts_all_p1!=0)
+        return(RTstops_arr)
 
     def mask_tRNA_database(self, min_mut_freq=0.1, min_pos_count=10, min_tr_count=30, \
                            frac_max_score=0.90, match_score=1, mismatch_score=-1, \
