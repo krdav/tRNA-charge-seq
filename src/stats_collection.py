@@ -189,7 +189,8 @@ class STATS_collection:
 
         # Aggregate dataframe and write as CSV file:
         row_mask = (stat_df['3p_cover']) & (stat_df['3p_non-temp'] == '') & \
-                   np.array([len(_5p_nt) <= self.max_5p_non_temp for _5p_nt in stat_df['5p_non-temp']])
+                   (stat_df['5p_non-temp'].apply(len) <= self.max_5p_non_temp) & \
+                   ((stat_df['align_3p_nt'] == 'A') | (stat_df['align_3p_nt'] == 'C'))
         agg_df = stat_df[row_mask].groupby(self.stats_agg_cols[:-2], as_index=False).agg({"count": "sum", "UMIcount": "sum"})
         agg_df.to_csv(stats_agg_fnam, header=True, index=False)
 
