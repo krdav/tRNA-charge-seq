@@ -734,7 +734,7 @@ class TRNA_plot:
 
     def plot_coverage(self, compartment='cyto', plot_type='needle', \
         aa_norm=False, y_norm=False, plot_name='cov_plot_cyto_needle', \
-        sample_list=None, verbose=True, n_jobs=4):
+        sample_list=None, verbose=True, n_jobs=4, max_5p_non_temp=10):
         # Check input:
         if compartment != 'mito' and compartment != 'cyto':
             raise Exception('Unknown compartment specified: {}\nValid strings are either either "mito" or "cyto"'.format(compartment))
@@ -762,7 +762,7 @@ class TRNA_plot:
             row['compartment'] = compartment
             row['aa_norm'] = aa_norm
             row['y_norm'] = y_norm
-            data.append((index, row))
+            data.append((index, row, max_5p_non_temp))
         # Collect data for plotting for each sample:
         with WorkerPool(n_jobs=n_jobs) as pool:
             results = pool.map(self._collect_coverage_data, data)
@@ -874,7 +874,7 @@ class TRNA_plot:
                     pass
                     print(err)
 
-    def _collect_coverage_data(self, index, row):
+    def _collect_coverage_data(self, index, row, max_5p_non_temp):
         print('  {}'.format(row['sample_name_unique']), end='')
         # Read data and add necessary columns:
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
@@ -898,6 +898,9 @@ class TRNA_plot:
 
         # Choose rows from requested compartment:
         type_mask = (sample_stats['3p_cover'] == True) & \
+                    (sample_stats['3p_non-temp'] == '') & \
+                    (sample_stats['5p_non-temp'].apply(len) <= max_5p_non_temp) & \
+                    ((sample_stats['align_3p_nt'] == 'A') | (sample_stats['align_3p_nt'] == 'C')) & \
                     (sample_stats['single_codon']) & \
                     (~sample_stats['Ecoli_ctr']) & \
                     (sample_stats['AA_letter'].apply(len) == 1)
