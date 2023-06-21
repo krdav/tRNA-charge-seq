@@ -14,9 +14,8 @@ class STATS_collection:
     Keyword arguments:
     common_seqs -- bzip2 compressed fasta file of commonly observed sequences to avoid duplicated alignments (default None)
     ignore_common_count -- Ignore common count even if X_common-seq-obs.json filename exists (default False)
-    check_exists -- Check if required files exist before starting. If set to False, this will ignore checking for common count (default True)
+    check_exists -- Check if required files exist before starting (default True)
     overwrite_dir -- Overwrite old stats folder if any exists (default False)
-    check_exists -- Check if input files exist (default True)
     reads_SW_sorted -- Assume reads and SW results are sorted in the same order. This gives a massive memory saving. (default True)
     from_UMIdir -- Is the input data from a folder made with the UMI_trim class? (default True)
     max_5p_non_temp -- Maximum length of 5p non templated nucleotides (default 10)
