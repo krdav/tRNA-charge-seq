@@ -559,16 +559,22 @@ class UMI_trim:
     Class to trim off the UMI from each read,
     add it to the fasta header and generate statistics
     on the UMI use.
+    After trimming it is possible to downsample the number
+    of reads such 
+
     Keyword arguments:
     UMI_end -- Set of nucleotides posible on the last UMI position (default {'T', 'C'})
     overwrite_dir -- Overwrite previous UMI trim folder (default False)
     check_input -- Check if input files exist (default True)
     UMI_len -- UMI length (default 10)
     UMI_bins -- Number of possible UMIs (default 4^9 x 2)
+    downsample_absolute -- Maximum number of trimmed UMI sequences, randomly choose for downsampling (default 2.5e6)
+    downsample_percentile -- Determine the 'downsample_absolute' variable as a percentile of the number of trimmed UMI sequences in all input samples (default False)
     '''
     def __init__(self, dir_dict, sample_df, UMI_end={'T', 'C'}, \
                  overwrite_dir=False, check_input=True, UMI_len=10, \
-                 UMI_bins=4**9*2):
+                 UMI_bins=4**9*2, downsample_absolute=2.5e6, \
+                 downsample_percentile=False):
         # Calculate the number of possible UMIs,
         # 9x random nt. (A/G/T/C) and one purine (A/G)
         self.UMI_bins = UMI_bins
@@ -580,6 +586,8 @@ class UMI_trim:
         # Input:
         self.sample_df = sample_df
         self.dir_dict = dir_dict
+        self.downsample_absolute = downsample_absolute
+        self.downsample_percentile = downsample_percentile
 
         # Check files exists before starting:
         self.BC_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['BC_dir'])
@@ -615,6 +623,27 @@ class UMI_trim:
             data = list(self.sample_df.iterrows())
             with WorkerPool(n_jobs=n_jobs) as pool:
                 results = pool.map(self._trim_file, data)
+
+            # Find the max number of reads for downsampling:
+            ds_abs_max = None
+            if self.downsample_percentile:                
+                stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_after_trim', \
+                                                          'N_UMI_observed', 'N_UMI_expected', \
+                                                          'N_after_downsample'])
+                ds_abs_max = int(np.percentile(stats_df['N_after_trim'], self.downsample_percentile))
+            elif self.downsample_absolute:
+                ds_abs_max = int(self.downsample_absolute)
+            # Perform downsampling if requested:
+            if not ds_abs_max is None:
+                print('Downsampling UMI trimmed sequences to maximum {} reads.'.format(ds_abs_max))
+                # Update results with the downsampling choice:
+                for ri in range(len(results)):
+                    if results[ri][-1] > ds_abs_max:
+                        results[ri][-1] = ds_abs_max
+                # Run downsampling in parallel:
+                with WorkerPool(n_jobs=n_jobs) as pool:
+                    _ = pool.map(self._downsample_file, results)
+
             self._collect_stats(results)
         else:
             try:
@@ -625,16 +654,6 @@ class UMI_trim:
                 raise err
         return(self.sample_df)
 
-    '''
-    def run_serial(self, overwrite=True):
-        if overwrite:
-            results = [self._trim_file(index, row) for index, row in self.sample_df.iterrows()]
-            self._collect_stats(results)
-        else:
-            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs), index_col=0)
-        return(self.sample_df)
-    '''
-    
     def _trim_file(self, index, row):
         input_fnam = '{}/{}.fastq.bz2'.format(self.BC_dir_abs, row['sample_name_unique'])
         output_fnam = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
@@ -662,17 +681,40 @@ class UMI_trim:
         # Calculate and return the observed and expected UMI count:
         N_umi_obs = len(UMIs)
         N_umi_exp = self.UMI_bins*(1-((self.UMI_bins-1) / self.UMI_bins)**Nseqs)
-        return([row['sample_name_unique'], Nseqs, N_umi_obs, N_umi_exp])
+        return([row['sample_name_unique'], Nseqs, N_umi_obs, N_umi_exp, Nseqs])
+
+    def _downsample_file(self, unam, Nseqs, unused1, unused2, Nds):
+        if Nseqs == Nds:
+            return()
+
+        # Randomly sample indices:
+        idx_set = set(np.random.choice(Nseqs, size=Nds, replace=False))
+        # I/O and read sampling:
+        UMI_fnam = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, unam)
+        UMI_fnam_DS = '{}/{}_UMI-trimmed.fastq.bz2_DStmp'.format(self.UMI_dir_abs, unam)
+        with bz2.open(UMI_fnam, "rt") as fh_in:
+            with bz2.open(UMI_fnam_DS, "wt") as fh_out:
+                for idx, fq_in in enumerate(FastqGeneralIterator(fh_in)):
+                    if idx in idx_set:
+                        fh_out.write("@{}\n{}\n+\n{}\n".format(*fq_in))
+        # Overwrite old UMI file with new:
+        os.replace(UMI_fnam_DS, UMI_fnam)
 
     def _collect_stats(self, results):
         # Stats to dataframe:
-        stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_after_trim', 'N_UMI_observed', 'N_UMI_expected'])
+        stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_after_trim', \
+                                                  'N_UMI_observed', 'N_UMI_expected', \
+                                                  'N_after_downsample'])
         # Merge stats with sample info dataframe:
-        self.sample_df = self.sample_df.drop(columns=['N_after_trim', 'N_UMI_observed', 'N_UMI_expected'], errors='ignore')
+        self.sample_df = self.sample_df.drop(columns=['N_after_trim', 'N_UMI_observed', 'N_UMI_expected', 'N_after_downsample'], errors='ignore')
         self.sample_df = self.sample_df.merge(stats_df, on=['sample_name_unique'])        
         # Add stats:
         self.sample_df['percent_seqs_after_UMI_trim'] = self.sample_df['N_after_trim'] / self.sample_df['N_total'] * 100
         self.sample_df['percent_UMI_obs-vs-exp'] = self.sample_df['N_UMI_observed'] / self.sample_df['N_UMI_expected'] * 100
+        # Rearrange column order:
+        colnames = self.sample_df.columns.tolist()
+        new_colnames = colnames[:-3] + colnames[-2:] + [colnames[-3]]
+        self.sample_df = self.sample_df.loc[:, new_colnames].copy()
         # Dump stats as Excel file:
         self.sample_df.to_excel('{}/sample_stats.xlsx'.format(self.UMI_dir_abs))
 
