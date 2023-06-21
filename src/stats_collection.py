@@ -177,10 +177,10 @@ class STATS_collection:
             # as an empty string and not as NaN.
             stat_df = pd.read_csv(stats_fh, keep_default_na=False, dtype=self.stats_csv_header_td)
 
-        # Check and warn if the UMI count exceeds 1/100th
+        # Check and warn if the UMI count exceeds 1/10th
         # of the number of UMI bins. If the UMI count is too
         # high it will be underestimating the real count.
-        UMI_high_count = sum(stat_df['UMIcount'] > int(self.UMI_bins/100))
+        UMI_high_count = sum(stat_df['UMIcount'] > int(self.UMI_bins/10))
         if UMI_high_count > 0:
             warnings.warn('Warning: {} rows with more than {} UMI counts for sample: {}'.format(UMI_high_count, \
                                                                                                 int(self.UMI_bins/100), \
@@ -191,6 +191,7 @@ class STATS_collection:
                    (stat_df['5p_non-temp'].apply(len) <= self.max_5p_non_temp) & \
                    ((stat_df['align_3p_nt'] == 'A') | (stat_df['align_3p_nt'] == 'C'))
         agg_df = stat_df[row_mask].groupby(self.stats_agg_cols[:-2], as_index=False).agg({"count": "sum", "UMIcount": "sum"})
+        agg_df['UMI_percent_exp'] = UMI_exp(agg_df['count'].values, agg_df['UMIcount'].values, self.UMI_bins)
         agg_df.to_csv(stats_agg_fnam, header=True, index=False)
 
         return(stats_agg_fnam)
@@ -424,3 +425,8 @@ def row_exist_or_none(row, col):
         return(row[col])
     except:
         return(None)
+
+def UMI_exp(c, cUMI, N_bins):
+    b = 4**9*2
+    N_umi_exp = N_bins*(1-((N_bins-1) / N_bins)**c)
+    return(100 * cUMI / N_umi_exp)

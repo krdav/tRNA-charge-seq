@@ -53,9 +53,9 @@ class TRNA_plot:
         self.stats_agg_cols = ['sample_name_unique', 'sample_name', 'replicate', 'barcode', 'species', \
                                'tRNA_annotation', 'tRNA_annotation_len', 'unique_annotation', \
                                '5p_cover', 'align_3p_nt', 'codon', 'anticodon', 'amino_acid', \
-                               'align_gap', 'fmax_score>0.9', 'UMIcount', 'count']
+                               'align_gap', 'fmax_score>0.9', 'UMIcount', 'count', 'UMI_percent_exp']
         self.stats_agg_cols_type = [str, str, int, str, str, str, int, bool, \
-                                    bool, str, str, str, str, bool, bool, int, int]
+                                    bool, str, str, str, str, bool, bool, int, int, float]
         self.stats_agg_cols_td = {nam:tp for nam, tp in zip(self.stats_agg_cols, self.stats_agg_cols_type)}
 
         # Input:
