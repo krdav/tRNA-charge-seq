@@ -1,4 +1,5 @@
 import sys, os, shutil, bz2, copy, contextlib, gc
+import pickle
 from subprocess import Popen, PIPE, STDOUT
 from Bio import SeqIO
 from Bio import Align
@@ -148,30 +149,71 @@ class TM_analysis:
     def find_muts(self, unique_anno=True, match_score=1, mismatch_score=-1, \
                   open_gap_score=-2, extend_gap_score=-1, n_jobs=4, verbose=True, \
                   sample_list=None, max_5p_non_temp=10):
-        self.verbose = verbose
-        if self.verbose:
+        '''
+        Find mutations, gaps and RT stops in the input samples.
+        For each read in the sample a new alignment is generated
+        to the transcripts previously defined as annotations.
+
+        Keyword arguments:
+        unique_anno -- Only use reads with a unique annotation (default True)
+        match_score -- Match score in the alignment between the read and its reference transcript (default 1)
+        mismatch_score -- Mismatch penalty in the alignment between the read and its reference transcript (default -1)
+        open_gap_score -- Open gap penalty in the alignment between the read and its reference transcript (default -2)
+        extend_gap_score -- Extend gap penalty in the alignment between the read and its reference transcript (default -1)
+        n_jobs -- Number of subprocesses to spawn in parallel (default 4)
+        verbose -- Print status on samples processed (default True)
+        sample_list -- Unique sample names of the samples to be processed. If None, all samples are processed (default None)
+        max_5p_non_temp -- (default 10)
+        '''
+        if verbose:
             print('Collecting stats from:', end='')
         if sample_list is None:
             sample_list = [row['sample_name_unique'] for _, row in self.sample_df.iterrows()]
         
-        self.unique_anno = unique_anno
-        self.match_score, self.mismatch_score, self.open_gap_score, self.extend_gap_score = match_score, mismatch_score, open_gap_score, extend_gap_score
-        
         # Find mutations in the transcripts for each file:
-        data = [(idx, row, max_5p_non_temp) for idx, row in self.sample_df.iterrows() if row['sample_name_unique'] in sample_list]
+        data = list()
+        for idx, row in self.sample_df.iterrows() if row['sample_name_unique'] in sample_list:
+            data.append([(idx, row, unique_anno, max_5p_non_temp, match_score, mismatch_score, open_gap_score, extend_gap_score, verbose)])
         with WorkerPool(n_jobs=n_jobs) as pool:
             results = pool.map(self._collect_transcript_muts, data)
         # Fill out the transcript mutations per sample:
         for unam_res in results:
             unam, res = unam_res
             self.tr_muts[unam] = res
-#        # Fix ends (if CC-end, due to oxidation/cleavage, turn into CCA-end):
-#        self._fix_end()
-#        # Fill in RT PCR stop frequency:
-#        self._RTstop()
+    
+    def pickle_muts_write(self, pickle_name='saved_muts.pickle'):
+        '''
+        Pickle transcript mutations found using the find_muts method.
+        '''
+        if len(self.tr_muts) == 0:
+            print('No mutations to pickle. First run the find_muts method.')
+            return()
+        pickle_fnam = '{}/{}'.format(self.TM_dir_abs, pickle_name)
+        with open(pickle_fnam, 'wb') as fh:
+            pickle.dump(self.tr_muts, fh)
 
-    def _collect_transcript_muts(self, index, row, max_5p_non_temp):
-        if self.verbose:
+    def pickle_muts_read(self, pickle_name='saved_muts.pickle'):
+        '''
+        Read previously generated transcript mutations from pickle file.
+
+        '''
+        pickle_fnam = '{}/{}'.format(self.TM_dir_abs, pickle_name)
+        if not os.path.exists(pickle_fnam):
+            print('No filename found here: {}'.format(pickle_fnam))
+            return()
+        with open(pickle_fnam, 'rb') as fh:
+            self.tr_muts = pickle.load(fh)
+
+    def _collect_transcript_muts(self, index, row, unique_anno, max_5p_non_temp, \
+                                 match_score, mismatch_score, open_gap_score, \
+                                 extend_gap_score, verbose):
+        '''
+        Find mutations, gaps and RT stop in a single sample.
+        First, define the read sequences to work on, then
+        align these to their respective reference and
+        finally extract the mutation, gap and RT stop info.
+        '''
+        if verbose:
             print('  {}'.format(row['sample_name_unique']), end='')
 
         species = row['species']
@@ -181,10 +223,10 @@ class TM_analysis:
         # Initiate the aligner:
         aligner = Align.PairwiseAligner()
         aligner.mode = 'local'
-        aligner.match_score = self.match_score
-        aligner.mismatch_score = self.mismatch_score
-        aligner.open_gap_score = self.open_gap_score
-        aligner.extend_gap_score = self.extend_gap_score
+        aligner.match_score = match_score
+        aligner.mismatch_score = mismatch_score
+        aligner.open_gap_score = open_gap_score
+        aligner.extend_gap_score = extend_gap_score
 
         # Deduplicate and count the input reads for alignment:
         trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
@@ -250,7 +292,7 @@ class TM_analysis:
                     # Skip unaligned reads:
                     continue
                 # Skip if multiple annotations found but unique requested:
-                if self.unique_anno and len(anno_list) > 1:
+                if unique_anno and len(anno_list) > 1:
                     continue
 
                 # Generate all alignments first to enable a total count:
@@ -377,6 +419,10 @@ class TM_analysis:
         '''
         Simple logo plot of the nucleotide/gap observations broken 
         down by tRNA transcript (and species, if multiple exists in samples).
+        
+        Keyword arguments:
+
+
         '''
 
         # Get the mutations combined for the requested samples:
@@ -412,6 +458,11 @@ class TM_analysis:
                             png_dpi=False, no_plot_return=False, mito=False, \
                             sort_rows=True, sample_list=None, RTstops=False, \
                             min_obs=100):
+        '''
+        qwerty
+
+        Keyword arguments:
+        '''
         # Get the mutations combined for the requested samples:
         if sample_list is None:
             sample_list = list(self.tr_muts.keys())
@@ -499,6 +550,11 @@ class TM_analysis:
                              gap_only=False, \
                              mask_min_count=0, \
                              right_align=True):
+        '''
+        qwety
+
+        Keyword arguments:
+        '''
         # Write both mutation frequencies and positional counts:
         muts_csv_fnam_abs = '{}/{}_frequencies.csv'.format(self.TM_dir_abs, csv_name)
         counts_csv_fnam_abs = '{}/{}_counts.csv'.format(self.TM_dir_abs, csv_name)
@@ -565,6 +621,11 @@ class TM_analysis:
                                     sample_list_exl=None, bc_list_exl=None,
                                     freq_avg_weighted=True, \
                                     topN=10, topN_select='max_diff'):
+        '''
+        qwerty
+
+        Keyword arguments:
+        '''
 
         # Handle if input is unique sample names
         # or sample names with replicates to merge:
@@ -754,8 +815,27 @@ class TM_analysis:
 
     def plot_transcript_mut(self, topN=50, species='human', plot_name='tr-mut_matrix', \
                             png_dpi=False, no_plot_return=False, mito=False, gap_only=False, \
-                            sort_rows=True, min_count_show=10, sample_list=None,
+                            sort_rows=True, min_count_show=100, sample_list=None,
                             freq_avg_weighted=True):
+        '''
+        Plot a heatmap of the transcript mutations in one
+        or multiple samples averaged.
+        Returns the mutation matrix as a pandas dataframe, the figure axes
+        and the transcript annotations sorted.
+
+        Keyword arguments:
+        topN -- Number of transcripts to plot. Taken from a list ordered by the number of observations (default 50)
+        species -- Species to plot (default 'human')
+        plot_name -- Plot filename (default 'tr-mut_matrix')
+        png_dpi -- DPI for plot as PNG. If False, only PDF is made (default False)
+        no_plot_return -- Do not return plot (default False)
+        mito -- Only plot mitochondrial transcripts (default False)
+        gap_only -- Only plot gap frequency (default False)
+        sort_rows -- Sort the plotted rows using hierarchical clustering (default True)
+        min_count_show -- Minimum observations of a position to be shown (default 100)
+        sample_list -- List of samples to combine for plotting. If None, all samples with mutation data are used (default None)
+        freq_avg_weighted -- Calculate the mutation frequency averaged across samples, weighted by the number observations (default True)
+        '''
         # Get the mutations combined for the requested samples:
         if sample_list is None:
             sample_list = list(self.tr_muts.keys())
@@ -859,6 +939,11 @@ class TM_analysis:
 
     def _calc_mut_freq(self, tr_muts_combi, anno, species, \
                        gap_only, min_count_show):
+        '''
+        Calculate the frequency of all mismatches (including gaps)
+        or the frequency of gaps alone. Also allow for masking
+        based on a minimum number of observations.
+        '''
         tr_len = tr_muts_combi[species][anno]['seq_len']
         tr_seq = tr_muts_combi[species][anno]['seq']
 
@@ -907,10 +992,30 @@ class TM_analysis:
                                       where=counts_all_p1!=0)
         return(RTstops_arr)
 
-    def mask_tRNA_database(self, min_mut_freq=0.1, min_pos_count=10, min_tr_count=30, \
-                           frac_max_score=0.90, match_score=1, mismatch_score=-1, \
+    def mask_tRNA_database(self, min_mut_freq=0.84, min_pos_count=1000, min_tr_count=3000, \
+                           frac_max_score=0.95, match_score=1, mismatch_score=-1, \
                            open_gap_score=-2, extend_gap_score=-2, sample_list=None,
                            freq_avg_weighted=True):
+        '''
+        Mask tRNA sequences based on the mutation frequency
+        observed in the input samples.
+        In order to extend the masking to transcripts with few
+        or no observations, all the transcripts are aligned
+        and those highly similar (defined by the frac_max_score input variable)
+        inherit the maskings from transcripts with sufficient observations.
+
+        Keyword arguments:
+        min_mut_freq -- Minimum mutation frequency to be masked (default 0.84)
+        min_pos_count -- Minimum observations of a position to be masked (default 1000)
+        min_tr_count -- Minimum observations of a transcript to be masked (default 3000)
+        frac_max_score -- The minimum fraction of the maximal alignment score to share masking between two transcripts (default 0.95)
+        match_score -- Match score in alignment between two transcript (default 1)
+        mismatch_score -- Mismatch penalty in alignment between two transcript (default -1)
+        open_gap_score -- Open gap penalty in alignment between two transcript (default -2)
+        extend_gap_score -- Extend gap penalty in alignment between two transcript (default -2)
+        sample_list -- List of samples to combine for sequence masking. If None, all samples with mutation data are used (default None)
+        freq_avg_weighted -- Calculate the mutation frequency averaged across samples, weighted by the number observations (default True)
+        '''
         # Get the mutations combined for the requested samples:
         if sample_list is None:
             sample_list = list(self.tr_muts.keys())
@@ -1025,6 +1130,11 @@ class TM_analysis:
         self.tr_muts_masked = tr_muts_combi
 
     def write_masked_tRNA_database(self, out_dir='tRNA_database_masked'):
+        '''
+        Write the masked tRNA database with folder structure,
+        sequences and BLAST index such that it can be used
+        directly for a new alignment run.
+        '''
         if self.tr_muts_masked is None:
             print('No masked sequences were found. Run the "mask_tRNA_database" function to generate masked sequences.')
             return(1)
