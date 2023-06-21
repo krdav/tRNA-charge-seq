@@ -30,11 +30,12 @@ class TM_analysis:
     alignment between a read and its tRNA transcript.
 
     Keyword arguments:
+    check_exists -- Check if required files exist before starting (default True)
     use_UMIcount -- Use UMI counts instead of read counts (default True)
     '''
     def __init__(self, dir_dict, sample_df, tRNA_database, \
                  pull_default=False, common_seqs=None, ignore_common_count=False, \
-                 overwrite_dir=False, verbose=True, use_UMIcount=True):
+                 overwrite_dir=False, verbose=True, check_exists=True, use_UMIcount=True):
         self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', \
                                  'sample_name', 'replicate', 'barcode', 'tRNA_annotation', \
                                  'align_score', 'unique_annotation', 'tRNA_annotation_len', \
@@ -73,19 +74,20 @@ class TM_analysis:
                 raise Exception('Default "sample_df" could not be found: {}'.format(sample_df_path))
 
         # Check files exists before starting:
-        for sp in tRNA_database:
-            assert(os.path.exists(tRNA_database[sp]))
-        for _, row in self.sample_df.iterrows():
-            stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
-            assert(os.path.exists(stats_fnam))
-            common_obs_fn = '{}/{}_common-seq-obs.json'.format(self.align_dir_abs, row['sample_name_unique'])
-            if not self.common_seqs_fnam is None:
-                assert(os.path.exists(common_obs_fn))
-            elif self.common_seqs_fnam is None and ignore_common_count is False and os.path.exists(common_obs_fn):
-                raise Exception('Found common sequence counts for {}\n'
-                                'See: {}\n'
-                                'But common sequences are not specified. Either specify common sequences '
-                                'or explicitly set ignore_common_count=True'.format(row['sample_name_unique'], common_obs_fn))
+        if check_exists:
+            for sp in tRNA_database:
+                assert(os.path.exists(tRNA_database[sp]))
+            for _, row in self.sample_df.iterrows():
+                stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
+                assert(os.path.exists(stats_fnam))
+                common_obs_fn = '{}/{}_common-seq-obs.json'.format(self.align_dir_abs, row['sample_name_unique'])
+                if not self.common_seqs_fnam is None:
+                    assert(os.path.exists(common_obs_fn))
+                elif self.common_seqs_fnam is None and ignore_common_count is False and os.path.exists(common_obs_fn):
+                    raise Exception('Found common sequence counts for {}\n'
+                                    'See: {}\n'
+                                    'But common sequences are not specified. Either specify common sequences '
+                                    'or explicitly set ignore_common_count=True'.format(row['sample_name_unique'], common_obs_fn))
 
         # Dictionary to store mutation info for each transcript:
         self.tr_muts = dict()
@@ -172,8 +174,11 @@ class TM_analysis:
         
         # Find mutations in the transcripts for each file:
         data = list()
-        for idx, row in self.sample_df.iterrows() if row['sample_name_unique'] in sample_list:
-            data.append([(idx, row, unique_anno, max_5p_non_temp, match_score, mismatch_score, open_gap_score, extend_gap_score, verbose)])
+        for idx, row in self.sample_df.iterrows():
+            if row['sample_name_unique'] in sample_list:
+                data.append((idx, row, unique_anno, max_5p_non_temp, \
+                              match_score, mismatch_score, open_gap_score, \
+                              extend_gap_score, verbose))
         with WorkerPool(n_jobs=n_jobs) as pool:
             results = pool.map(self._collect_transcript_muts, data)
         # Fill out the transcript mutations per sample:
@@ -414,15 +419,95 @@ class TM_analysis:
             print('Following samples could not be found and therefore not combined: {}'.format(str(sample_list_cp)))
         return(tr_muts_combi)
 
+    def write_transcript_mut(self, sample_list=None, species='human', \
+                             csv_name='tr-mut_matrix', \
+                             data_type='mut', \
+                             mask_min_count=1, \
+                             right_align=True):
+        '''
+        Export transcript mutations (mutations, gaps or RTstops)
+        as csv file.
+
+        Keyword arguments:
+        sample_list -- Unique sample names of the samples to be used. If None, all samples are used (default None)
+        species -- Species to plot (default 'human')
+        data_type -- Data type to export. Choose between 'mut', 'gap' or 'RTstops' (default 'mut')
+        mask_min_count -- Minimum observations, otherwise data is masked (default 1)
+        right_align -- Align data to the right side of the row using the longest transcript to determine the number of columns (default True)
+        '''
+
+        if data_type not in ['mut', 'gap', 'RTstops']:
+            print('The data_type input variable needs to be either \'mut\', \'gap\' or \'RTstops\'. Found {}'.format(data_type))
+
+        # Write both mutation frequencies and positional counts:
+        muts_csv_fnam_abs = '{}/{}_frequencies.csv'.format(self.TM_dir_abs, csv_name)
+        counts_csv_fnam_abs = '{}/{}_counts.csv'.format(self.TM_dir_abs, csv_name)
+        muts_fh = open(muts_csv_fnam_abs, 'w')
+        counts_fh = open(counts_csv_fnam_abs, 'w')
+        # Sequence positions are indexed from 1:
+        seq_pos_str = ','.join(['P'+str(i+1) for i in range(self.longest_tRNA)])
+        print('sample_name_unique,tRNA_annotation,tRNA_len,{}'.format(seq_pos_str), file=muts_fh)
+        print('sample_name_unique,tRNA_annotation,tRNA_len,{}'.format(seq_pos_str), file=counts_fh)
+
+        # Keep track of the samples requested
+        # to warn if any was not found:
+        # Get the mutations combined for the requested samples:
+        if sample_list is None:
+            sample_list = list(self.tr_muts.keys())
+        sample_list_cp = copy.deepcopy(sample_list)
+        for unam, sp_muts in self.tr_muts.items():
+            # Skip if sample name not requested:
+            if not unam in sample_list_cp:
+                continue
+            # Pop from sample list to track that all
+            # sample names have been found:
+            sample_list_cp.pop(sample_list_cp.index(unam))
+            for anno in sp_muts[species]:
+                freq_mut_print = np.zeros(self.longest_tRNA, dtype=float)
+                counts_all_print = np.zeros(self.longest_tRNA, dtype=int)
+                tRNA_len = sp_muts[species][anno]['seq_len']
+                if data_type == 'gap':
+                    freq_mut = sp_muts[species][anno]['gap_freq']
+                elif data_type == 'mut':
+                    freq_mut = sp_muts[species][anno]['mut_freq']
+                else:
+                    freq_mut = sp_muts[species][anno]['RTstops']
+
+                # Enforce a minimum number of observations:
+                counts_all = sp_muts[species][anno]['PSCM'].sum(1)
+                min_count_mask = counts_all >= mask_min_count
+                if min_count_mask.sum() == 0:
+                    continue
+                freq_mut[~min_count_mask] = 0
+
+                # Left or right align the mutation frequencies
+                # compared to the longest tRNA:
+                if right_align:
+                    freq_mut_print[-len(freq_mut):] = freq_mut
+                    counts_all_print[-len(counts_all):] = counts_all
+                else:
+                    freq_mut_print[:len(freq_mut)] = freq_mut
+                    counts_all_print[:len(counts_all)] = counts_all
+
+                print('{},{},{},{}'.format(unam, anno, tRNA_len, ','.join(map(str, freq_mut_print))), file=muts_fh)
+                print('{},{},{},{}'.format(unam, anno, tRNA_len, ','.join(map(str, counts_all_print))), file=counts_fh)
+        muts_fh.close()
+        counts_fh.close()
+        if len(sample_list_cp) > 0:
+            print('Did not find all the samples requested: {}'.format(str(sample_list_cp)))
+
     def plot_transcript_logo(self, topN=30, species='human', plot_name='tr-mut_logos', \
-                             sample_list=None):
+                             mito=False, sample_list=None):
         '''
         Simple logo plot of the nucleotide/gap observations broken 
-        down by tRNA transcript (and species, if multiple exists in samples).
+        down by tRNA transcript.
+        Will merge data from all samples in the provided sample list.
         
         Keyword arguments:
-
-
+        topN -- Number of transcripts to plot. Taken from a list ordered by the number of observations (default 30)
+        species -- Species to plot (default 'human')
+        plot_name -- Plot filename (default 'tr-mut_logos')
+        sample_list -- List of samples to combine for plotting. If None, all samples with mutation data are used (default None)
         '''
 
         # Get the mutations combined for the requested samples:
@@ -431,7 +516,7 @@ class TM_analysis:
         tr_muts_combi = self._combine_tr_muts(sample_list)
 
         # Sort according to observations:
-        anno_sorted = self._sort_anno(tr_muts_combi, species)
+        anno_sorted = self._sort_anno(tr_muts_combi, species, mito=mito)
         if topN > len(anno_sorted):
             topN = len(anno_sorted)
 
@@ -459,9 +544,23 @@ class TM_analysis:
                             sort_rows=True, sample_list=None, RTstops=False, \
                             min_obs=100):
         '''
-        qwerty
+        Plot the coverage of each transcript, with the additional option
+        of plotting the RT PCR fall off.
+        Will merge data from all samples in the provided sample list.
+        Returns the mutation matrix as a pandas dataframe, the figure axes
+        and the transcript annotations sorted.
 
         Keyword arguments:
+        topN -- Number of transcripts to plot. Taken from a list ordered by the number of observations (default 50)
+        species -- Species to plot (default 'human')
+        plot_name -- Plot filename (default 'tr-cov_matrix')
+        png_dpi -- DPI for plot as PNG. If False, only PDF is made (default False)
+        no_plot_return -- Do not return plot (default False)
+        mito -- Only plot mitochondrial transcripts (default False)
+        RTstops -- qwert (default False)
+        min_obs -- Minimum observations of a position to be shown. Only valid for plotting RT stops (default 100)
+        sort_rows -- Sort the plotted rows using hierarchical clustering (default True)
+        sample_list -- List of samples to combine for plotting. If None, all samples with mutation data are used (default None)
         '''
         # Get the mutations combined for the requested samples:
         if sample_list is None:
@@ -482,7 +581,7 @@ class TM_analysis:
             if mito and 'mito' not in anno:
                 continue
             # Count all observations for a given positions:
-            counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1)
+            counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1).values
 
             # RT stops are pre-calculated:
             if RTstops:
@@ -492,14 +591,9 @@ class TM_analysis:
                 obs_mat[i, -seq_len:] = RTstops_arr
             else:
                 # Insert from right side so CCA is always indexed
-                # at the highest index:
-                obs_mat[i, -seq_len:] = counts_all
-                # The read count for each transcript is weighted so they all start of with
-                # the same coverage at the 3p and normalized so it sums to 100.
-                # Weigh each transcript:
-                obs_mat = obs_mat.T / obs_mat[:, -1]
+                # at the highest index.
                 # Normalize so coverage at 3p is 100:
-                obs_mat = 100 * obs_mat.T
+                obs_mat[i, -seq_len:] = 100 * counts_all / counts_all[-1]
 
         # Transform mutation matrix to dataframe:
         seq_idx_str = list(map(str, range(obs_mat.shape[1])))
@@ -545,274 +639,6 @@ class TM_analysis:
         else:
             return((obs_mat_df, fig, sorted_anno))
 
-    def write_transcript_mut(self, sample_list, species='human', \
-                             csv_name='tr-mut_matrix', \
-                             gap_only=False, \
-                             mask_min_count=0, \
-                             right_align=True):
-        '''
-        qwety
-
-        Keyword arguments:
-        '''
-        # Write both mutation frequencies and positional counts:
-        muts_csv_fnam_abs = '{}/{}_frequencies.csv'.format(self.TM_dir_abs, csv_name)
-        counts_csv_fnam_abs = '{}/{}_counts.csv'.format(self.TM_dir_abs, csv_name)
-        muts_fh = open(muts_csv_fnam_abs, 'w')
-        counts_fh = open(counts_csv_fnam_abs, 'w')
-        # Sequence positions are indexed from 1:
-        seq_pos_str = ','.join(['P'+str(i+1) for i in range(self.longest_tRNA)])
-        print('sample_name_unique,tRNA_annotation,tRNA_len,{}'.format(seq_pos_str), file=muts_fh)
-        print('sample_name_unique,tRNA_annotation,tRNA_len,{}'.format(seq_pos_str), file=counts_fh)
-
-        # Keep track of the samples requested
-        # to warn if any was not found:
-        # Get the mutations combined for the requested samples:
-        if sample_list is None:
-            sample_list = list(self.tr_muts.keys())
-        sample_list_cp = copy.deepcopy(sample_list)
-        for unam, sp_muts in self.tr_muts.items():
-            # Skip if sample name not requested:
-            if not unam in sample_list_cp:
-                continue
-            # Pop from sample list to track that all
-            # sample names have been found:
-            sample_list_cp.pop(sample_list_cp.index(unam))
-            for anno in sp_muts[species]:
-                freq_mut_print = np.zeros(self.longest_tRNA, dtype=float)
-                counts_all_print = np.zeros(self.longest_tRNA, dtype=int)
-                tRNA_len = sp_muts[species][anno]['seq_len']
-                if gap_only:
-                    freq_mut = sp_muts[species][anno]['gap_freq']
-                else:
-                    freq_mut = sp_muts[species][anno]['mut_freq']
-
-                # Enforce a minimum number of observations:
-                counts_all = sp_muts[species][anno]['PSCM'].sum(1)
-                min_count_mask = counts_all >= mask_min_count
-                if min_count_mask.sum() == 0:
-                    continue
-                freq_mut[~min_count_mask] = 0
-
-                # Left or right align the mutation frequencies
-                # compared to the longest tRNA:
-                if right_align:
-                    freq_mut_print[-len(freq_mut):] = freq_mut
-                    counts_all_print[-len(counts_all):] = counts_all
-                else:
-                    freq_mut_print[:len(freq_mut)] = freq_mut
-                    counts_all_print[:len(counts_all)] = counts_all
-
-                print('{},{},{},{}'.format(unam, anno, tRNA_len, ','.join(map(str, freq_mut_print))), file=muts_fh)
-                print('{},{},{},{}'.format(unam, anno, tRNA_len, ','.join(map(str, counts_all_print))), file=counts_fh)
-        muts_fh.close()
-        counts_fh.close()
-        if len(sample_list_cp) > 0:
-            print('Did not find all the samples requested: {}'.format(str(sample_list_cp)))
-
-    def plot_transcript_mut_compare(self, species='human', \
-                                    plot_name='tr-mut_matrix_comp', \
-                                    no_plot_return=False, \
-                                    mito=False, gap_only=False, \
-                                    min_count_show=100, \
-                                    sample_pairs=None, sample_unique_pairs=None, \
-                                    tr_compare_inp=None, \
-                                    anno_substring_compare=None,\
-                                    sample_list_exl=None, bc_list_exl=None,
-                                    freq_avg_weighted=True, \
-                                    topN=10, topN_select='max_diff'):
-        '''
-        qwerty
-
-        Keyword arguments:
-        '''
-
-        # Handle if input is unique sample names
-        # or sample names with replicates to merge:
-        if not sample_pairs is None:
-            assert(len(sample_pairs[0]) == len(sample_pairs[1]))
-            # Exclude samples/barcodes:
-            mask_exl = np.array([True]*len(self.sample_df))
-            if not sample_list_exl is None:
-                for snam in sample_list_exl:
-                    mask_exl &= (self.sample_df['sample_name_unique'] != snam)
-            if not bc_list_exl is None:
-                for bc in bc_list_exl:
-                    mask_exl &= (self.sample_df['barcode'] != bc)
-
-            # Convert sample names to lists of unique sample names:
-            pair_list = [[], []]
-            name_list = [[], []]
-            for sp1, sp2 in zip(*sample_pairs):
-                mask1 = mask_exl & (self.sample_df['sample_name'] == sp1)
-                mask2 = mask_exl & (self.sample_df['sample_name'] == sp2)
-                if mask1.sum() > 0 and mask2.sum() > 0:
-                    pair_list[0].append(list(self.sample_df.loc[mask1, 'sample_name_unique'].values))
-                    pair_list[1].append(list(self.sample_df.loc[mask2, 'sample_name_unique'].values))
-                    name_list[0].append(sp1)
-                    name_list[1].append(sp2)
-        elif not sample_unique_pairs is None:
-            assert(len(sample_unique_pairs[0]) == len(sample_unique_pairs[1]))
-            pair_list = [[], []]
-            name_list = [[], []]
-            for sp1, sp2 in zip(*sample_unique_pairs):
-                pair_list[0].append([sp1])
-                pair_list[1].append([sp2])
-                name_list[0].append(sp1)
-                name_list[1].append(sp2)
-        else:
-            raise Exception('Neither sample_pairs nor sample_unique_pairs lists were provided.')
-
-        # Print each plot to the same PDF file:
-        plot_fnam = '{}/{}.pdf'.format(self.TM_dir_abs, plot_name)
-        with PdfPages(plot_fnam) as pp:
-            # Process each pair:
-            for name_idx, sp1l_sp2l in enumerate(zip(*pair_list)):
-                sp1l, sp2l = sp1l_sp2l
-                tr_muts_combi_s1 = self._combine_tr_muts(sp1l, freq_avg_weighted=freq_avg_weighted)
-                tr_muts_combi_s2 = self._combine_tr_muts(sp2l, freq_avg_weighted=freq_avg_weighted)
-
-                # Find the transcripts to compare:
-                if not anno_substring_compare is None:
-                    tr_compare_list = [anno for anno in tr_muts_combi_s1[species] if anno_substring_compare in anno]
-                    # Sort list of annotations:
-                    tr_compare_list = self._sort_freq_diff(tr_muts_combi_s1, \
-                                                            tr_muts_combi_s2, \
-                                                            species, min_count_show, \
-                                                            gap_only, mito, topN_select, \
-                                                            list_to_sort=tr_compare_list)
-                elif tr_compare_inp is None:
-                    # Sort annotations according to largest distance between samples:
-                    topN_anno = self._sort_freq_diff(tr_muts_combi_s1, tr_muts_combi_s2, \
-                                                      species, min_count_show, gap_only, \
-                                                      mito, topN_select)
-                    tr_compare_list = topN_anno[:topN]
-
-                # Get data for plotting.
-                # The mutation matrix is going to contain the
-                # transcript mutations for each sample,
-                # one after the other, separated by an empty row:
-                mut_mat = np.zeros((2, self.longest_tRNA))
-                index_names = list()
-                anno_idx = 0
-                for anno in tr_compare_list:
-                    if not anno in tr_muts_combi_s1[species] or not anno in tr_muts_combi_s2[species]:
-                        continue
-                    freq_mut_s1, min_count_mask_s1 = self._get_mut_freq_filted(tr_muts_combi_s1, species, anno, min_count_show, gap_only)
-                    freq_mut_s2, min_count_mask_s2 = self._get_mut_freq_filted(tr_muts_combi_s2, species, anno, min_count_show, gap_only)
-                    if freq_mut_s1 is None or freq_mut_s2 is None:
-                        continue
-                    # Positional coverage has to be fulfilled in both samples:
-                    min_count_mask_s12 = min_count_mask_s1 & min_count_mask_s2
-                    freq_mut_s1[~min_count_mask_s12] = 0
-                    freq_mut_s2[~min_count_mask_s12] = 0
-
-                    # Add an extra transcript to the mutation matrix:
-                    if anno_idx > 0:
-                        # The row that is spacing between transcript comparisons,
-                        # should be filled with nan to map to white in the cmap:
-                        space_row = np.ones((1, self.longest_tRNA)) * np.nan
-                        new_rows = np.zeros((2, self.longest_tRNA))
-                        mut_mat = np.vstack((mut_mat, space_row, new_rows))
-                        index_names.append('')
-
-                    # Add the transcript mutation frequencies from each
-                    # sample, right aligned:
-                    mut_mat[-2, -len(freq_mut_s1):] = freq_mut_s1
-                    mut_mat[-1, -len(freq_mut_s2):] = freq_mut_s2
-                    anno_short = anno.split('_')[-1]
-                    index_names.append(name_list[0][name_idx]+'_'+anno_short)
-                    index_names.append(name_list[1][name_idx]+'_'+anno_short)
-                    anno_idx += 1
-                # Skip if nothing was added:
-                if anno_idx == 0:
-                    continue
-
-                # Transform mutation matrix to dataframe:
-                seq_idx_str = list(map(str, range(mut_mat.shape[1])))
-                mut_mat_df = pd.DataFrame(mut_mat, columns=seq_idx_str, index=index_names)
-
-                # Adjust the plot size and generate it:
-                y_scaler = 15/60
-                y_len = y_scaler*len(mut_mat_df)
-                if y_len < 4:
-                    y_len = 4
-                fig, ax = plt.subplots(1, 1, figsize=(25, y_len))
-                g1 = sns.heatmap(mut_mat_df, yticklabels=True, xticklabels=True, vmin=0, ax=ax);
-                ax.yaxis.set_tick_params(labelsize=11)
-                ax.xaxis.set_tick_params(labelsize=11)
-                ax.set_xlabel("5' to 3' (filled in from right to left)", size=16)
-                plot_title = 'Sample comparison {} vs. {}'.format(name_list[0][name_idx], name_list[1][name_idx])
-                ax.set_title(plot_title, fontsize=15)
-
-                # Write to PDF file:
-                fig.tight_layout()
-                pp.savefig(fig, bbox_inches='tight')
-                if no_plot_return:
-                    plt.close(fig)
-
-    def _sort_freq_diff(self, tr_muts_combi_s1, tr_muts_combi_s2, species, \
-                        min_count_show, gap_only, mito, topN_select, \
-                        list_to_sort=None):
-        '''
-        Sort tRNA annotations according to the maximal difference
-        in mutation or gap frequency observed between two samples.
-        '''
-        # Default, sort all annotations:
-        if list_to_sort is None:
-            anno_loop_list = tr_muts_combi_s1[species].keys()
-        else:
-            anno_loop_list = list_to_sort
-
-        topN_anno = list()
-        for anno in anno_loop_list:
-            if not anno in tr_muts_combi_s1[species] and not anno in tr_muts_combi_s2[species]:
-                continue
-            # If mito is specified, skip non-mito annotations:
-            if mito and 'mito' not in anno:
-                continue
-            freq_mut_s1, min_count_mask_s1 = self._get_mut_freq_filted(tr_muts_combi_s1, species, anno, min_count_show, gap_only)
-            freq_mut_s2, min_count_mask_s2 = self._get_mut_freq_filted(tr_muts_combi_s2, species, anno, min_count_show, gap_only)
-            if freq_mut_s1 is None or freq_mut_s2 is None:
-                continue
-            # Positional coverage has to be fulfilled in both samples:
-            min_count_mask_s12 = min_count_mask_s1 & min_count_mask_s2
-            freq_mut_s1[~min_count_mask_s12] = 0
-            freq_mut_s2[~min_count_mask_s12] = 0
-
-            # Find the requested distance between samples:
-            if topN_select == 'max_diff':
-                metric = np.max(np.abs(freq_mut_s1 - freq_mut_s2))
-            elif topN_select == 'mean_diff':
-                metric = np.mean(np.abs(freq_mut_s1 - freq_mut_s2))
-            elif topN_select == 'mean_square':
-                metric = np.mean(np.square(freq_mut_s1 - freq_mut_s2))
-            else:
-                raise Exception('"topN_select" input not understood: {}. Choose from "max_diff", "mean_diff", "mean_square".'.format(topN_select))
-            topN_anno.append((anno, metric))
-
-        # Sort annotations according to largest distance between samples:
-        topN_anno = [tup[0] for tup in sorted(topN_anno, key=lambda x: x[1], reverse=True)]
-        return(topN_anno)
-
-    def _get_mut_freq_filted(self, tr_muts_combi, species, anno, \
-                             min_count_show, gap_only):
-        '''
-        Filter the mutation or gap frequency array
-        by a minimum number of observations.
-        '''
-        if gap_only:
-            freq_mut = tr_muts_combi[species][anno]['gap_freq']
-        else:
-            freq_mut = tr_muts_combi[species][anno]['mut_freq']
-        # Enforce a minimum number of observations:
-        counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1)
-        min_count_mask = counts_all >= min_count_show
-        if min_count_mask.sum() == 0:
-            return(None, None)
-        freq_mut[~min_count_mask] = 0
-        return(freq_mut, min_count_mask)
-
     def plot_transcript_mut(self, topN=50, species='human', plot_name='tr-mut_matrix', \
                             png_dpi=False, no_plot_return=False, mito=False, gap_only=False, \
                             sort_rows=True, min_count_show=100, sample_list=None,
@@ -820,6 +646,7 @@ class TM_analysis:
         '''
         Plot a heatmap of the transcript mutations in one
         or multiple samples averaged.
+        Will merge data from all samples in the provided sample list.
         Returns the mutation matrix as a pandas dataframe, the figure axes
         and the transcript annotations sorted.
 
@@ -918,6 +745,231 @@ class TM_analysis:
             return((mut_mat_df, None, sorted_anno))
         else:
             return((mut_mat_df, fig, sorted_anno))
+
+    def plot_transcript_mut_compare(self, species='human', \
+                                    plot_name='tr-mut_matrix_comp', \
+                                    no_plot_return=False, \
+                                    mito=False, data_type='mut', \
+                                    min_count_show=200, \
+                                    sample_pairs=None, sample_unique_pairs=None, \
+                                    tr_compare_list=None, \
+                                    anno_substring_compare=None,\
+                                    sample_list_exl=None, bc_list_exl=None,
+                                    freq_avg_weighted=True, \
+                                    topN=10, topN_select='max_diff'):
+        '''
+        Plot a heatmap of the pairwise comparison between the
+        transcript mutation, gap or RT stop data of two samples.
+        Will merge data from all samples in the provided sample list,
+        except those excluded using the sample or barcode exclusion lists.
+
+        Keyword arguments:
+        sample_pairs -- Sample pairs to compare using the 'sample_name' column. This will first merge all the samples with the same sample name (default None)
+        sample_unique_pairs -- Sample pairs to compare using the 'sample_name_unique' column (default None)
+        sample_list_exl -- List of unique sample names, using the sample_name_unique column, to exclude from any comparison (default None)
+        bc_list_exl -- List of barcodes to exclude from any comparison (default None)
+        anno_substring_compare -- Substring that must be in the annotation of the transcripts to compare (default None)
+        tr_compare_list -- List of transcript names to compare. If None, using the topN parameter (default None)
+        topN -- Number of transcripts to plot. Taken from a list ordered by the difference between the sample pairs (default 10)
+        topN_select -- The metric to calculate the difference between samples. Choose between 'max_diff', 'mean_diff' or 'mean_square' (default 'max_diff')
+        species -- Species to plot (default 'human')
+        plot_name -- Plot filename (default 'tr-mut_matrix_comp')
+        no_plot_return -- Do not return plot (default False)
+        mito -- Only plot mitochondrial transcripts (default False)
+        data_type -- Data type to export. Choose between 'mut', 'gap' or 'RTstops' (default 'mut')
+        min_count_show -- Minimum observations of a position to be shown (default 200)
+        freq_avg_weighted -- Calculate the mutation frequency averaged across samples, weighted by the number observations (default True)
+        '''
+
+        # Handle if input is unique sample names
+        # or sample names with replicates to merge:
+        if not sample_pairs is None:
+            assert(len(sample_pairs[0]) == len(sample_pairs[1]))
+            # Exclude samples/barcodes:
+            mask_exl = np.array([True]*len(self.sample_df))
+            if not sample_list_exl is None:
+                for snam in sample_list_exl:
+                    mask_exl &= (self.sample_df['sample_name_unique'] != snam)
+            if not bc_list_exl is None:
+                for bc in bc_list_exl:
+                    mask_exl &= (self.sample_df['barcode'] != bc)
+
+            # Convert sample names to lists of unique sample names:
+            pair_list = [[], []]
+            name_list = [[], []]
+            for sp1, sp2 in zip(*sample_pairs):
+                mask1 = mask_exl & (self.sample_df['sample_name'] == sp1)
+                mask2 = mask_exl & (self.sample_df['sample_name'] == sp2)
+                if mask1.sum() > 0 and mask2.sum() > 0:
+                    pair_list[0].append(list(self.sample_df.loc[mask1, 'sample_name_unique'].values))
+                    pair_list[1].append(list(self.sample_df.loc[mask2, 'sample_name_unique'].values))
+                    name_list[0].append(sp1)
+                    name_list[1].append(sp2)
+        elif not sample_unique_pairs is None:
+            assert(len(sample_unique_pairs[0]) == len(sample_unique_pairs[1]))
+            pair_list = [[], []]
+            name_list = [[], []]
+            for sp1, sp2 in zip(*sample_unique_pairs):
+                pair_list[0].append([sp1])
+                pair_list[1].append([sp2])
+                name_list[0].append(sp1)
+                name_list[1].append(sp2)
+        else:
+            raise Exception('Neither sample_pairs nor sample_unique_pairs lists were provided.')
+
+        # Print each plot to the same PDF file:
+        plot_fnam = '{}/{}.pdf'.format(self.TM_dir_abs, plot_name)
+        with PdfPages(plot_fnam) as pp:
+            # Process each pair:
+            for name_idx, sp1l_sp2l in enumerate(zip(*pair_list)):
+                sp1l, sp2l = sp1l_sp2l
+                tr_muts_combi_s1 = self._combine_tr_muts(sp1l, freq_avg_weighted=freq_avg_weighted)
+                tr_muts_combi_s2 = self._combine_tr_muts(sp2l, freq_avg_weighted=freq_avg_weighted)
+
+                # Find the transcripts to compare:
+                if not anno_substring_compare is None:
+                    tr_compare_list = [anno for anno in tr_muts_combi_s1[species] if anno_substring_compare in anno]
+                    # Sort list of annotations:
+                    tr_compare_list = self._sort_freq_diff(tr_muts_combi_s1, \
+                                                           tr_muts_combi_s2, \
+                                                           species, min_count_show, \
+                                                           data_type, mito, topN_select, \
+                                                           list_to_sort=tr_compare_list)
+                elif tr_compare_list is None:
+                    # Sort annotations according to largest distance between samples:
+                    topN_anno = self._sort_freq_diff(tr_muts_combi_s1, tr_muts_combi_s2, \
+                                                     species, min_count_show, data_type, \
+                                                     mito, topN_select)
+                    tr_compare_list = topN_anno[:topN]
+                else:
+                    pass
+
+                # Get data for plotting.
+                # The mutation matrix is going to contain the
+                # transcript mutations for each sample,
+                # one after the other, separated by an empty row:
+                mut_mat = np.zeros((2, self.longest_tRNA))
+                index_names = list()
+                anno_idx = 0
+                for anno in tr_compare_list:
+                    if not anno in tr_muts_combi_s1[species] or not anno in tr_muts_combi_s2[species]:
+                        continue
+                    freq_mut_s1, min_count_mask_s1 = self._get_mut_freq_filted(tr_muts_combi_s1, species, anno, min_count_show, data_type)
+                    freq_mut_s2, min_count_mask_s2 = self._get_mut_freq_filted(tr_muts_combi_s2, species, anno, min_count_show, data_type)
+                    if freq_mut_s1 is None or freq_mut_s2 is None:
+                        continue
+                    # Positional coverage has to be fulfilled in both samples:
+                    min_count_mask_s12 = min_count_mask_s1 & min_count_mask_s2
+                    freq_mut_s1[~min_count_mask_s12] = 0
+                    freq_mut_s2[~min_count_mask_s12] = 0
+
+                    # Add an extra transcript to the mutation matrix:
+                    if anno_idx > 0:
+                        # The row that is spacing between transcript comparisons,
+                        # should be filled with nan to map to white in the cmap:
+                        space_row = np.ones((1, self.longest_tRNA)) * np.nan
+                        new_rows = np.zeros((2, self.longest_tRNA))
+                        mut_mat = np.vstack((mut_mat, space_row, new_rows))
+                        index_names.append('')
+
+                    # Add the transcript mutation frequencies from each
+                    # sample, right aligned:
+                    mut_mat[-2, -len(freq_mut_s1):] = freq_mut_s1
+                    mut_mat[-1, -len(freq_mut_s2):] = freq_mut_s2
+                    anno_short = anno.split('_')[-1]
+                    index_names.append(name_list[0][name_idx]+'_'+anno_short)
+                    index_names.append(name_list[1][name_idx]+'_'+anno_short)
+                    anno_idx += 1
+                # Skip if nothing was added:
+                if anno_idx == 0:
+                    continue
+
+                # Transform mutation matrix to dataframe:
+                seq_idx_str = list(map(str, range(mut_mat.shape[1])))
+                mut_mat_df = pd.DataFrame(mut_mat, columns=seq_idx_str, index=index_names)
+
+                # Adjust the plot size and generate it:
+                y_scaler = 15/60
+                y_len = y_scaler*len(mut_mat_df)
+                if y_len < 4:
+                    y_len = 4
+                fig, ax = plt.subplots(1, 1, figsize=(25, y_len))
+                g1 = sns.heatmap(mut_mat_df, yticklabels=True, xticklabels=True, vmin=0, ax=ax);
+                ax.yaxis.set_tick_params(labelsize=11)
+                ax.xaxis.set_tick_params(labelsize=11)
+                ax.set_xlabel("5' to 3' (filled in from right to left)", size=16)
+                plot_title = 'Sample comparison {} vs. {}'.format(name_list[0][name_idx], name_list[1][name_idx])
+                ax.set_title(plot_title, fontsize=15)
+
+                # Write to PDF file:
+                fig.tight_layout()
+                pp.savefig(fig, bbox_inches='tight')
+                if no_plot_return:
+                    plt.close(fig)
+
+    def _sort_freq_diff(self, tr_muts_combi_s1, tr_muts_combi_s2, species, \
+                        min_count_show, data_type, mito, topN_select, \
+                        list_to_sort=None):
+        '''
+        Sort tRNA annotations according to the maximal difference
+        in mutation or gap frequency observed between two samples.
+        '''
+        # Default, sort all annotations:
+        if list_to_sort is None:
+            anno_loop_list = tr_muts_combi_s1[species].keys()
+        else:
+            anno_loop_list = list_to_sort
+
+        topN_anno = list()
+        for anno in anno_loop_list:
+            if not anno in tr_muts_combi_s1[species] and not anno in tr_muts_combi_s2[species]:
+                continue
+            # If mito is specified, skip non-mito annotations:
+            if mito and 'mito' not in anno:
+                continue
+            freq_mut_s1, min_count_mask_s1 = self._get_mut_freq_filted(tr_muts_combi_s1, species, anno, min_count_show, data_type)
+            freq_mut_s2, min_count_mask_s2 = self._get_mut_freq_filted(tr_muts_combi_s2, species, anno, min_count_show, data_type)
+            if freq_mut_s1 is None or freq_mut_s2 is None:
+                continue
+            # Positional coverage has to be fulfilled in both samples:
+            min_count_mask_s12 = min_count_mask_s1 & min_count_mask_s2
+            freq_mut_s1[~min_count_mask_s12] = 0
+            freq_mut_s2[~min_count_mask_s12] = 0
+
+            # Find the requested distance between samples:
+            if topN_select == 'max_diff':
+                metric = np.max(np.abs(freq_mut_s1 - freq_mut_s2))
+            elif topN_select == 'mean_diff':
+                metric = np.mean(np.abs(freq_mut_s1 - freq_mut_s2))
+            elif topN_select == 'mean_square':
+                metric = np.mean(np.square(freq_mut_s1 - freq_mut_s2))
+            else:
+                raise Exception('"topN_select" input not understood: {}. Choose from "max_diff", "mean_diff", "mean_square".'.format(topN_select))
+            topN_anno.append((anno, metric))
+
+        # Sort annotations according to largest distance between samples:
+        topN_anno = [tup[0] for tup in sorted(topN_anno, key=lambda x: x[1], reverse=True)]
+        return(topN_anno)
+
+    def _get_mut_freq_filted(self, tr_muts_combi, species, anno, \
+                             min_count_show, data_type):
+        '''
+        Filter the mutation or gap frequency array
+        by a minimum number of observations.
+        '''
+        if data_type == 'gap':
+            freq_mut = tr_muts_combi[species][anno]['gap_freq']
+        elif data_type == 'mut':
+            freq_mut = tr_muts_combi[species][anno]['mut_freq']
+        else:
+            freq_mut = tr_muts_combi[species][anno]['RTstops']
+        # Enforce a minimum number of observations:
+        counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1)
+        min_count_mask = counts_all >= min_count_show
+        if min_count_mask.sum() == 0:
+            return(None, None)
+        freq_mut[~min_count_mask] = 0
+        return(freq_mut, min_count_mask)
 
     def _sort_anno(self, tr_muts_combi, species, mito=False):
         '''
