@@ -11,6 +11,7 @@ class STATS_collection:
     '''
     Class to collect statistics from the
     alignment results.
+
     Keyword arguments:
     common_seqs -- bzip2 compressed fasta file of commonly observed sequences to avoid duplicated alignments (default None)
     ignore_common_count -- Ignore common count even if X_common-seq-obs.json filename exists (default False)
@@ -104,6 +105,7 @@ class STATS_collection:
                      load_previous=False):
         '''
         Submit the input files for stats collection.
+
         Keyword arguments:
         n_jobs -- Number of subprocesses started in parallel (default 4)
         load_previous -- Attempt to load results from a previous stats collection by looking up ALL_stats_aggregate.csv (default False)

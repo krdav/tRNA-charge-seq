@@ -30,8 +30,13 @@ class TM_analysis:
     alignment between a read and its tRNA transcript.
 
     Keyword arguments:
+    common_seqs -- bzip2 compressed fasta file of commonly observed sequences to avoid duplicated alignments (default None)
+    ignore_common_count -- Ignore common count even if X_common-seq-obs.json filename exists (default False)
+    pull_default -- Attempt to load sample_df from default path (default False)
     check_exists -- Check if required files exist before starting (default True)
+    overwrite_dir -- Overwrite old transcript analysis folder if any exists (default False)
     use_UMIcount -- Use UMI counts instead of read counts (default True)
+    verbose -- Verbose printing collection progress (default True)
     '''
     def __init__(self, dir_dict, sample_df, tRNA_database, \
                  pull_default=False, common_seqs=None, ignore_common_count=False, \
@@ -271,7 +276,9 @@ class TM_analysis:
         sample_stats = sample_stats[row_mask]
         # Collect the sequence count annotation(s):
         ID2anno = dict()
-        for rid, tan, count in zip(sample_stats['readID'].values, sample_stats['tRNA_annotation'].values, sample_stats[self.count_col].values):
+        for rid, tan, count in zip(sample_stats['readID'].values, \
+                                   sample_stats['tRNA_annotation'].values, \
+                                   sample_stats[self.count_col].values):
             ID2anno[rid] = {'count': count, 'anno': tan.split('@')}
         sample_stats = None
         del sample_stats

@@ -12,6 +12,7 @@ import jellyfish
 class AR_merge:
     '''
     Class to merge the paired end reads using AdapterRemoval.
+
     Keyword arguments:
     AR_threads -- Threads specified to AdapterRemoval (default 4)
     overwrite_dir -- Overwrite old merge folder if any exists (default False)
@@ -53,6 +54,7 @@ class AR_merge:
     def run_parallel(self, n_jobs=4, overwrite=True):
         '''
         Submit the mate pair files for merging.
+
         Keyword arguments:
         n_jobs -- Number of subprocesses of AdapterRemoval started in parallel (default 4)
         overwrite -- Overwrite files of previous run. If false, skipping mate pair files with merged files existing (default True)
@@ -69,20 +71,6 @@ class AR_merge:
         except Exception as err:
             os.chdir(self.dir_dict['NBdir'])
             raise err
-
-    '''
-    def run_serial(self, overwrite=True):
-        self.AR_overwrite = overwrite
-        os.chdir(self.AdapterRemoval_dir_abs)
-        try:
-            results = [self._start_AR(index, row) for index, row in self.inp_file_df.iterrows()]
-            self._collect_stats()
-            os.chdir(self.dir_dict['NBdir'])
-            return(self.inp_file_df)
-        except Exception as err:
-            os.chdir(self.dir_dict['NBdir'])
-            raise err
-    '''
 
     def _start_AR(self, index, row):
         AR_cmd = self.AR_cmd_tmp.copy()
@@ -136,6 +124,7 @@ class AR_merge:
 class BC_split:
     '''
     Class to split the merged fastq files into several files based on barcodes.
+
     Keyword arguments:
     max_dist -- Maximum hamming distance between a read and a barcode to assign barcode identify to the read (default 1)
     overwrite_dir -- Overwrite old barcode split folder if any exists (default False)
@@ -171,6 +160,7 @@ class BC_split:
     def run_parallel(self, n_jobs=4, load_previous=False):
         '''
         Submit the merged files for barcode splitting.
+
         Keyword arguments:
         n_jobs -- Number of subprocesses to be started in parallel (default 4)
         load_previous -- Attempt to load results from a previous barcode split by looking up index-pair_stats.xlsx and sample_stats.xlsx (default False)
@@ -198,18 +188,6 @@ class BC_split:
                 print('Attempted to read previous stats from index-pair_stats and sample_stats, but failed...')
                 raise err
         return(self.sample_df, self.inp_file_df)
-
-    '''
-    def run_serial(self, overwrite=True):
-        if overwrite:
-            results = [self._split_file(index, row) for index, row in self.inp_file_df.iterrows()]
-            self._collect_stats(results)
-        else:
-            self.inp_file_df = pd.read_excel('{}/index-pair_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
-            self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.BC_dir_abs), index_col=0)
-
-        return(self.sample_df, self.inp_file_df)
-    '''
 
     def _split_file(self, index, row):
         basename = '-'.join(re.split('[_/]', row['fastq_mate1_filename'])[:-1])
@@ -309,6 +287,7 @@ class Kmer_analysis:
     '''
     Class to find Kmers at the end of unmapped reads,
     in order to determine if barcode mapping was efficient.
+
     Keyword arguments:
     k_size -- Kmer size (default 5)
     overwrite -- Overwrite previous Kmer analysis folder (default True)
@@ -437,6 +416,7 @@ class BC_analysis:
     '''
     Class to find barcodes at the end of unmapped reads,
     in order to determine if barcode mapping was efficient.
+
     Keyword arguments:
     BC_size_3p -- Length of the barcode sequence to extract from the 3p end of each barcode in index_df (default 5)
     overwrite -- Overwrite previous barcode analysis folder (default True)
@@ -614,6 +594,7 @@ class UMI_trim:
     def run_parallel(self, n_jobs=4, load_previous=False):
         '''
         Submit files for UMI trimming.
+
         Keyword arguments:
         n_jobs -- Number of subprocesses to be started in parallel (default 4)
         load_previous -- Attempt to load results from a previous UMI trim by looking up sample_stats.xlsx (default False)
