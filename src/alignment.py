@@ -21,6 +21,7 @@ class SWIPE_align:
     If used on sequences not derived from the UMI_trim class,
     a sample sheet with seqeunce paths, species and unique sample names
     must be specified. See example folder for formatting.
+
     Keyword arguments:
     gap_penalty -- Penalty for opening a gap in the alignment (default 6)
     extension_penalty -- Penalty for extending a gap in the alignment (default 1)
@@ -121,6 +122,7 @@ class SWIPE_align:
                      verbose=True, load_previous=False):
         '''
         Submit the input files for alignment.
+
         Keyword arguments:
         n_jobs -- Number of subprocesses of SWIPE started in parallel (default 4)
         overwrite -- Overwrite files of previous run. If false, skipping mate pair files with merged files existing (default True)

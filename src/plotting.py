@@ -26,6 +26,7 @@ class TRNA_plot:
     Class to generate some standard plots
     from the tRNAseq data such as charge per codon,
     read per million (RPM) etc.
+
     Keyword arguments:
     sample_df -- sample_df pandas dataframe. Can also be pulled from default location (default None)
     pull_default -- Pull sample_df from default location in the alignment folder
