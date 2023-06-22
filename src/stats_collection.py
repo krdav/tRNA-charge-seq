@@ -177,10 +177,10 @@ class STATS_collection:
             # as an empty string and not as NaN.
             stat_df = pd.read_csv(stats_fh, keep_default_na=False, dtype=self.stats_csv_header_td)
 
-        # Check and warn if the UMI count exceeds 1/40th
+        # Check and warn if the UMI count exceeds one quarter
         # of the number of UMI bins. If the UMI count is too
         # high it will be underestimating the real count.
-        UMI_high_count = sum(stat_df['UMIcount'] > int(self.UMI_bins/40))
+        UMI_high_count = sum(stat_df['UMIcount'] > int(self.UMI_bins/25))
         if UMI_high_count > 0:
             warnings.warn('Warning: {} rows with more than {} ' \
                           'UMI counts for sample: {}. ' \
