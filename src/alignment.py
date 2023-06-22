@@ -513,10 +513,10 @@ class SWIPE_align:
             # Calculate stats:
             if not self.from_UMIdir:
                 map_p = N_mapped / Ninput * 100
-            elif row['N_after_trim'] == 0:
+            elif row['N_after_downsample'] == 0:
                 map_p = 0
             else:
-                map_p = N_mapped / row['N_after_trim'] * 100
+                map_p = N_mapped / row['N_after_downsample'] * 100
             # Multiple mappings have fasta IDs merged with "@":
             if N_mapped == 0:
                 P_ma = 0
