@@ -31,13 +31,15 @@ class TRNA_plot:
     pull_default -- Pull sample_df from default location in the alignment folder
     stats_fnam -- Filename for the aggregated stats csv file made during stats collection. If None is specified trying to look it up in the stats collection dir under ALL_stats_aggregate.csv (default None)
     overwrite_dir -- Overwrite old plotting folder if any exists (default False)
-    use_UMIcount -- Use UMI counts instead of read counts (default True)
+    charge_count -- Column to use for charge calculation. Either count or UMIcount (default 'count')
+    RPM_count -- Column to use for RPM and coverage calculations. Either count or UMIcount (default 'UMIcount')
     excl_align_gap -- Exclude all alignments with a gap (default False)
     excl_09_fmax -- Exclude all alignments with an alignment score less than 90% of maximum for the given length alignment (default False)
     '''
     def __init__(self, dir_dict, sample_df=None, stats_fnam=None, \
                  pull_default=False, overwrite_dir=False, \
-                 use_UMIcount=True, excl_align_gap=False, excl_09_fmax=False):
+                 charge_count='count', RPM_count='UMIcount', \
+                 excl_align_gap=False, excl_09_fmax=False):
         self.stats_csv_header = ['readID', 'common_seq', 'sample_name_unique', \
                                  'sample_name', 'replicate', 'barcode', 'species', 'tRNA_annotation', \
                                  'align_score', 'fmax_score', 'Ndeletions', 'Ninsertions', \
@@ -63,11 +65,11 @@ class TRNA_plot:
         self.charge_filt = dict()
         self.excl_align_gap = excl_align_gap
         self.excl_09_fmax = excl_09_fmax
-        self.use_UMIcount = use_UMIcount
-        if self.use_UMIcount:
-            self.count_col = 'UMIcount'
+        if charge_count in ['count', 'UMIcount'] and RPM_count in ['count', 'UMIcount']:
+            self.charge_count_col = charge_count
+            self.RPM_count_col = RPM_count
         else:
-            self.count_col = 'count'
+            raise Exception('"charge_count" and "RPM_count" input must be either "count" or "UMIcount"')
 
         self.stats_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['stats_dir'])
         # Attempt to load sample_df from default path:
@@ -165,36 +167,37 @@ class TRNA_plot:
         charge_df = charge_df.groupby(self.stats_agg_cols[:-2], as_index=False).agg({'count': "sum", 'UMIcount': "sum"}).reset_index(drop=True)
 
         # Count A and C endings:
-        charge_df['A_count'] = [ct if nt == 'A' else 0 for ct, nt in zip(charge_df[self.count_col], charge_df['align_3p_nt'])]
-        charge_df['C_count'] = [ct if nt == 'C' else 0 for ct, nt in zip(charge_df[self.count_col], charge_df['align_3p_nt'])]
+        charge_df['A_count'] = [ct if nt == 'A' else 0 for ct, nt in zip(charge_df[self.charge_count_col], charge_df['align_3p_nt'])]
+        charge_df['C_count'] = [ct if nt == 'C' else 0 for ct, nt in zip(charge_df[self.charge_count_col], charge_df['align_3p_nt'])]
         # Group transcripts with different 3p nt.
         # then calculate charge:
         charge_df_cols = copy.deepcopy(self.stats_agg_cols)
         charge_df_cols.remove('align_3p_nt')
         charge_df_cols.remove('align_gap')
         charge_df_cols.remove('fmax_score>0.9')
-        charge_df_cols.remove('UMIcount')
-        charge_df_cols.remove('count')
         charge_df_cols.extend(['A_count', 'C_count'])
-        charge_df = charge_df.groupby(charge_df_cols[:-2], as_index=False).agg({'A_count': "sum", 'C_count': "sum"}).reset_index(drop=True)
-        charge_df['count'] = charge_df['A_count'] + charge_df['C_count']
-        charge_df['charge'] = 100 * charge_df['A_count'] / charge_df['count']
+        charge_df = charge_df.groupby(charge_df_cols[:-4], as_index=False).agg({'count': "sum", \
+                                                                                'UMIcount': "sum", \
+                                                                                'A_count': "sum", \
+                                                                                'C_count': "sum"}).reset_index(drop=True)
+        charge_df['charge'] = 100 * charge_df['A_count'] / (charge_df['A_count'] + charge_df['C_count'])
         # Add the sample total count to the rows:
-        df_count = charge_df[~charge_df['Ecoli_ctr']].groupby(['sample_name_unique'], as_index=False).agg({'count': "sum"}).reset_index(drop=True)
+        df_count = charge_df[~charge_df['Ecoli_ctr']].groupby(['sample_name_unique'], as_index=False).agg({self.RPM_count_col: "sum"}).reset_index(drop=True)
         charge_df = charge_df.merge(df_count, on='sample_name_unique', suffixes=('', '_sample_tot'))
         # Calculated the RPM and get rid of the total count:
-        charge_df['RPM'] = charge_df['count'] / (charge_df['count_sample_tot'] / 1e6)
-        charge_df = charge_df.drop(columns=['count_sample_tot'])
+        charge_df['RPM'] = charge_df[self.RPM_count_col] / (charge_df['{}_sample_tot'.format(self.RPM_count_col)] / 1e6)
+        charge_df = charge_df.drop(columns=['{}_sample_tot'.format(self.RPM_count_col)])
 
         # Filter and group by same amino acid:
         aa_mask = charge_df['single_aa']
         charge_df_aa = charge_df[aa_mask].groupby(['sample_name_unique', 'sample_name', 'replicate', \
                                                    'barcode', 'amino_acid', 'AA_letter', 'mito_codon', \
                                                    'Ecoli_ctr'], as_index=False).agg({"count": "sum", \
+                                                                                      "UMIcount": "sum", \
                                                                                       "A_count": "sum", \
                                                                                       "C_count": "sum", \
                                                                                       "RPM": "sum"}).reset_index(drop=True)
-        charge_df_aa['charge'] = 100 * charge_df_aa['A_count'] / charge_df_aa['count']
+        charge_df_aa['charge'] = 100 * charge_df_aa['A_count'] / (charge_df_aa['A_count'] + charge_df_aa['C_count'])
         self.charge_filt['aa'] = charge_df_aa
 
         # Filter and group by same codon:
@@ -203,10 +206,11 @@ class TRNA_plot:
                                                    'barcode', 'codon', 'anticodon', 'AA_codon', \
                                                    'amino_acid', 'AA_letter', 'mito_codon', \
                                                    'Ecoli_ctr'], as_index=False).agg({"count": "sum", \
+                                                                                      "UMIcount": "sum", \
                                                                                       "A_count": "sum", \
                                                                                       "C_count": "sum", \
                                                                                       "RPM": "sum"}).reset_index(drop=True)
-        charge_df_cd['charge'] = 100 * charge_df_cd['A_count'] / charge_df_cd['count']
+        charge_df_cd['charge'] = 100 * charge_df_cd['A_count'] / (charge_df_cd['A_count'] + charge_df_cd['C_count'])
         self.charge_filt['codon'] = charge_df_cd
 
         # Filter and group by same transcript:
@@ -216,10 +220,11 @@ class TRNA_plot:
                                                    'tRNA_annotation_len', 'codon', 'anticodon', 'AA_codon', \
                                                    'amino_acid', 'AA_letter', 'mito_codon', \
                                                    'Ecoli_ctr'], as_index=False).agg({"count": "sum", \
+                                                                                      "UMIcount": "sum", \
                                                                                       "A_count": "sum", \
                                                                                       "C_count": "sum", \
                                                                                       "RPM": "sum"}).reset_index(drop=True)
-        charge_df_tr['charge'] = 100 * charge_df_tr['A_count'] / charge_df_tr['count']
+        charge_df_tr['charge'] = 100 * charge_df_tr['A_count'] / (charge_df_tr['A_count'] + charge_df_tr['C_count'])
         self.charge_filt['tr'] = charge_df_tr
         self.charge_df = charge_df
 
@@ -242,8 +247,10 @@ class TRNA_plot:
 
         if charge_plot:
             y_axis = 'charge'
+            count_col = self.charge_count_col
         else:
             y_axis = 'RPM'
+            count_col = self.RPM_count_col
 
         if sample_list is None:
             sample_list = list(set(self.sample_df['sample_name_unique']))
@@ -263,7 +270,7 @@ class TRNA_plot:
                 sample_mask &= (charge_df_type['barcode'] != bc)
 
         # Only take rows with Ecoli controls:
-        sample_mask &= charge_df_type['Ecoli_ctr'] & (charge_df_type['count'] >= min_obs)
+        sample_mask &= charge_df_type['Ecoli_ctr'] & (charge_df_type[count_col] >= min_obs)
         charge_sample = charge_df_type[sample_mask].copy()
         
         # Different settings for different plot types:
@@ -309,8 +316,10 @@ class TRNA_plot:
         
         if charge_plot:
             y_axis = 'charge'
+            count_col = self.charge_count_col
         else:
             y_axis = 'RPM'
+            count_col = self.RPM_count_col
 
         if sample_list is None:
             sample_list = list(self.sample_df['sample_name'].drop_duplicates())
@@ -350,9 +359,9 @@ class TRNA_plot:
                     # Pick out samples names in the group:
                     snam_mask = np.array([sg_name in pg for pg in plot_group_set])
                     snam_set = set(self.sample_df.loc[snam_mask, 'sample_name'])
-                    sample_mask = (charge_df_type['sample_name'].isin(snam_set)) & (charge_df_type['count'] >= min_obs)
+                    sample_mask = (charge_df_type['sample_name'].isin(snam_set)) & (charge_df_type[count_col] >= min_obs)
                 else:
-                    sample_mask = (charge_df_type['sample_name'] == sg_name) & (charge_df_type['count'] >= min_obs)
+                    sample_mask = (charge_df_type['sample_name'] == sg_name) & (charge_df_type[count_col] >= min_obs)
 
                 # Exclude unique samples or barcodes:
                 if not sample_list_exl is None:
@@ -487,9 +496,16 @@ class TRNA_plot:
         else:
             raise Exception('Unknown plot type specified: {}\nValid strings are either either "aa", "codon" or "transcript".'.format(plot_type))
 
+        if charge_plot:
+            metric = 'charge'
+            count_col = self.charge_count_col
+        else:
+            metric = 'RPM'
+            count_col = self.RPM_count_col
+
         # Enforce minimum observations,
         # and not Ecoli control:
-        min_obs_mask = (charge_df_type['count'] > min_obs) & ~charge_df_type['Ecoli_ctr']
+        min_obs_mask = (charge_df_type[count_col] > min_obs) & ~charge_df_type['Ecoli_ctr']
         charge_df_type = charge_df_type[min_obs_mask]
 
         if not sample_pairs is None:
@@ -508,7 +524,9 @@ class TRNA_plot:
             
             # For sample names, merge replicates by taking the mean:
             colnames = charge_df_type.columns
-            gr_cols = colnames.drop(['sample_name_unique', 'replicate', 'barcode', 'count', 'A_count', 'C_count', 'RPM', 'charge'])
+            gr_cols = colnames.drop(['sample_name_unique', 'replicate', 'barcode', \
+                                     'count', 'UMIcount', 'A_count', 'C_count', \
+                                     'RPM', 'charge'])
             charge_df_type = charge_df_type.groupby(list(gr_cols), as_index=False).agg({'RPM': 'mean', 'charge': 'mean'}).reset_index(drop=True)
             charge_df_type_stdev = charge_df_type.groupby(list(gr_cols), as_index=False).agg({'RPM': 'std', 'charge': 'std'}).reset_index(drop=True)
         elif not sample_unique_pairs is None:
@@ -516,11 +534,6 @@ class TRNA_plot:
             pair_list = sample_unique_pairs
         else:
             raise Exception('Neither sample_pairs nor sample_unique_pairs lists were provided.')
-
-        if charge_plot:
-            metric = 'charge'
-        else:
-            metric = 'RPM'
 
         if sample_list is None:
             sample_list = list(self.sample_df['sample_name'].drop_duplicates())
@@ -669,7 +682,7 @@ class TRNA_plot:
         try:
             with warnings.catch_warnings(): # ignoring a warning about array assignment
                 warnings.simplefilter(action='ignore', category=FutureWarning)
-                counts_mat = lm.alignment_to_matrix(seq_list, sample_stats.loc[mask, self.count_col].values)
+                counts_mat = lm.alignment_to_matrix(seq_list, sample_stats.loc[mask, self.RPM_count_col].values)
         except:
             counts_mat = False
         return([counts_mat, title])
@@ -745,12 +758,13 @@ class TRNA_plot:
         sample_list = set(sample_list)
 
         # Columns used for data aggregation:
-        self.aa_cov_cols = ['sample_name_unique', 'tRNA_annotation_len', 'align_5p_idx', 'align_3p_idx', 'AA_letter', self.count_col]
+        aa_cov_cols = ['sample_name_unique', 'tRNA_annotation_len', \
+                       'align_5p_idx', 'align_3p_idx', 'AA_letter', \
+                       self.RPM_count_col]
         # Check data exists:
         for _, row in self.sample_df.iterrows():
             stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
             assert(os.path.exists(stats_fnam))
-        self.verbose = verbose
         if verbose:
             print('\nNow collecting data for sample:', end='')
 
@@ -762,7 +776,7 @@ class TRNA_plot:
             row['compartment'] = compartment
             row['aa_norm'] = aa_norm
             row['y_norm'] = y_norm
-            data.append((index, row, max_5p_non_temp))
+            data.append((index, row, aa_cov_cols, max_5p_non_temp, verbose))
         # Collect data for plotting for each sample:
         with WorkerPool(n_jobs=n_jobs) as pool:
             results = pool.map(self._collect_coverage_data, data)
@@ -874,7 +888,8 @@ class TRNA_plot:
                     pass
                     print(err)
 
-    def _collect_coverage_data(self, index, row, max_5p_non_temp):
+    def _collect_coverage_data(self, index, row, aa_cov_cols, \
+                               max_5p_non_temp, verbose):
         print('  {}'.format(row['sample_name_unique']), end='')
         # Read data and add necessary columns:
         stats_fnam = '{}/{}_stats.csv.bz2'.format(self.stats_dir_abs, row['sample_name_unique'])
@@ -911,8 +926,8 @@ class TRNA_plot:
 
         # Generate dataframe with coverage information.
         # The coverage can be calculated from the count and align_5p_idx.
-        cov_df = sample_stats.loc[type_mask, self.aa_cov_cols].copy()
-        cov_df = cov_df.groupby(self.aa_cov_cols[:-1], as_index=False).agg({self.count_col: "sum"}).reset_index(drop=True)
+        cov_df = sample_stats.loc[type_mask, aa_cov_cols].copy()
+        cov_df = cov_df.groupby(aa_cov_cols[:-1], as_index=False).agg({self.RPM_count_col: "sum"}).reset_index(drop=True)
 
         # tRNAs differ in length, so to plot coverage on the same x-axis,
         # we map the coverage of each tRNA to the longest tRNA in the set.
@@ -932,7 +947,10 @@ class TRNA_plot:
         cov_count = np.zeros((len(aa_order), max_len))
         # Each row has an amino acid letter, align_5p_idx and a count.
         # Insert these into the matrix:
-        for aa_let, _5pi, alen, count in zip(cov_df['AA_letter'], cov_df['align_5p_idx'], cov_df['tRNA_annotation_len'], cov_df[self.count_col]):
+        for aa_let, _5pi, alen, count in zip(cov_df['AA_letter'], \
+                                             cov_df['align_5p_idx'], \
+                                             cov_df['tRNA_annotation_len'], \
+                                             cov_df[self.RPM_count_col]):
             aa_idx = aa_order[aa_let]
             _5p_idx = _5pi - 1 # shift alignment index to 0 indexing
             _5p_idx_trans = len_map_len[alen][_5p_idx]
@@ -970,7 +988,7 @@ class TRNA_plot:
                 cov_count_sum[i] += cov_count_sum[i-1]
         # Add an additional row of zeroes:
         cov_count_sum = np.vstack((np.zeros(cov_count_sum.shape[1]), cov_count_sum))
-        title_info = (row['sample_name_unique'], cov_df[self.count_col].sum())
+        title_info = (row['sample_name_unique'], cov_df[self.RPM_count_col].sum())
         return([cov_count, cov_count_sum, aa_ordered_list, title_info])
 
 
