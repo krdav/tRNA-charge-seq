@@ -11,6 +11,7 @@ Dependencies (installed and in Env):
 *  Have not been tested with adapter removal v3
 * Swipe (https://github.com/torognes/swipe)
 * makeblastdb (required to make masked tRNA database, so not super important)
+* ImageMagick
 
 Dependencies (Python packages):
 * pandas
@@ -23,6 +24,7 @@ Dependencies (Python packages):
 * jellyfish
 * json_stream
 * logomaker
+* wand
 Using some newer functions in numpy, so be aware to update python packages.
 
 
