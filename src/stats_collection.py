@@ -182,12 +182,12 @@ class STATS_collection:
         # Check and warn if the UMI count exceeds one quarter
         # of the number of UMI bins. If the UMI count is too
         # high it will be underestimating the real count.
-        UMI_high_count = sum(stat_df['UMIcount'] > int(self.UMI_bins/25))
+        UMI_high_count = sum(stat_df['UMIcount'] > int(self.UMI_bins/20))
         if UMI_high_count > 0:
             warnings.warn('Warning: {} rows with more than {} ' \
                           'UMI counts for sample: {}. ' \
                           'Consider downsampling UMI reads.'.format(UMI_high_count, \
-                                                                    int(self.UMI_bins/100), \
+                                                                    int(self.UMI_bins/20), \
                                                                     row['sample_name_unique']))
 
         # Aggregate dataframe and write as CSV file:
