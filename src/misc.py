@@ -175,3 +175,12 @@ def find_nearest(array, value):
     idx = (np.abs(array - value)).argmin()
     return(idx)
 
+
+def show_PDF(pdf_path, page=1):
+    try:
+        from wand.image import Image as WImage
+        return(WImage(filename='{}[{}]'.format(pdf_path, page-1)))
+    except:
+        from IPython.display import IFrame
+        return(IFrame(pdf_path, width=1000, height=500))
+
