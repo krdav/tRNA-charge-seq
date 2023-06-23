@@ -759,6 +759,7 @@ class TM_analysis:
                                     mito=False, data_type='mut', \
                                     min_count_show=200, \
                                     sample_pairs=None, sample_unique_pairs=None, \
+                                    sample_pairs_col='sample_name', \
                                     tr_compare_list=None, \
                                     anno_substring_compare=None,\
                                     sample_list_exl=None, bc_list_exl=None,
@@ -771,7 +772,8 @@ class TM_analysis:
         except those excluded using the sample or barcode exclusion lists.
 
         Keyword arguments:
-        sample_pairs -- Sample pairs to compare using the 'sample_name' column. This will first merge all the samples with the same sample name (default None)
+        sample_pairs -- Sample pairs to compare using the sample_df column defined by the sample_pairs_col input variable to merge replicates (default None)
+        sample_pairs_col -- (default 'sample_name')
         sample_unique_pairs -- Sample pairs to compare using the 'sample_name_unique' column (default None)
         sample_list_exl -- List of unique sample names, using the sample_name_unique column, to exclude from any comparison (default None)
         bc_list_exl -- List of barcodes to exclude from any comparison (default None)
@@ -787,6 +789,9 @@ class TM_analysis:
         min_count_show -- Minimum observations of a position to be shown (default 200)
         freq_avg_weighted -- Calculate the mutation frequency averaged across samples, weighted by the number observations (default True)
         '''
+
+        if data_type not in ['mut', 'gap', 'RTstops']:
+            print('The data_type input variable needs to be either \'mut\', \'gap\' or \'RTstops\'. Found {}'.format(data_type))
 
         # Handle if input is unique sample names
         # or sample names with replicates to merge:
@@ -805,8 +810,8 @@ class TM_analysis:
             pair_list = [[], []]
             name_list = [[], []]
             for sp1, sp2 in zip(*sample_pairs):
-                mask1 = mask_exl & (self.sample_df['sample_name'] == sp1)
-                mask2 = mask_exl & (self.sample_df['sample_name'] == sp2)
+                mask1 = mask_exl & (self.sample_df[sample_pairs_col] == sp1)
+                mask2 = mask_exl & (self.sample_df[sample_pairs_col] == sp2)
                 if mask1.sum() > 0 and mask2.sum() > 0:
                     pair_list[0].append(list(self.sample_df.loc[mask1, 'sample_name_unique'].values))
                     pair_list[1].append(list(self.sample_df.loc[mask2, 'sample_name_unique'].values))
