@@ -480,15 +480,15 @@ class TRNA_plot:
                 pp.savefig(fig, bbox_inches='tight')
                 plt.close(fig)
 
-    def plot_abundance_corr2(self, \
-                             sample_pairs=None, \
-                             sample_pairs_col='sample_name', \
-                             sample_unique_pairs=None, \
-                             plot_type='aa', charge_plot=False, \
-                             log=False, plot_name='abundance_corr_plot_aa', \
-                             min_obs=100, sample_list=None, verbose=True, \
-                             sample_list_exl=None, \
-                             bc_list_exl=None, one2one_corr=False):
+    def plot_abundance_corr(self, \
+                            sample_pairs=None, \
+                            sample_pairs_col='sample_name', \
+                            sample_unique_pairs=None, \
+                            plot_type='aa', charge_plot=False, \
+                            log=False, plot_name='abundance_corr_plot_aa', \
+                            min_obs=100, sample_list=None, verbose=True, \
+                            sample_list_exl=None, \
+                            bc_list_exl=None, one2one_corr=False):
 
         if plot_type == 'aa':
             charge_df_type = self.charge_filt['aa'].copy()
@@ -539,11 +539,6 @@ class TRNA_plot:
                     name_list[0].append(sp1)
                     name_list[1].append(sp2)
 
-            # For sample names, merge replicates by taking the mean:
-            sele_cols = [sample_pairs_col] + merge_on + ['RPM', 'charge']
-            charge_df_type = charge_df_type[sele_cols].groupby(sele_cols[:-2], as_index=False).agg({'RPM': 'mean', 'charge': 'mean'}).reset_index(drop=True)
-            charge_df_type_stdev = charge_df_type[sele_cols].groupby(sele_cols[:-2], as_index=False).agg({'RPM': 'std', 'charge': 'std'}).reset_index(drop=True)
-
         elif not sample_unique_pairs is None:
             assert(len(sample_unique_pairs[0]) == len(sample_unique_pairs[1]))
             pair_list = [[], []]
@@ -562,7 +557,6 @@ class TRNA_plot:
         if verbose:
             print('\nNow plotting sample pairs:', end='')
 
-
         # Print each plot to the same PDF file:
         corr_fnam = '{}/{}.pdf'.format(self.plotting_dir_abs, plot_name)
         with PdfPages(corr_fnam) as pp:
@@ -570,13 +564,9 @@ class TRNA_plot:
             for name_idx, sp1l_sp2l in enumerate(zip(*pair_list)):
                 sp1l, sp2l = sp1l_sp2l
                 nam1, nam2 = name_list[0][name_idx], name_list[1][name_idx]
-                # Either as unique samples are with replicates:
-                if not sample_pairs is None:
-                    mask1 = charge_df_type[sample_pairs_col].isin(sp1l)
-                    mask2 = charge_df_type[sample_pairs_col].isin(sp2l)
-                else:
-                    mask1 = charge_df_type['sample_name_unique'].isin(sp1l)
-                    mask2 = charge_df_type['sample_name_unique'].isin(sp2l)
+                # Select rows for all samples in each group:
+                mask1 = charge_df_type['sample_name_unique'].isin(sp1l)
+                mask2 = charge_df_type['sample_name_unique'].isin(sp2l)
 
                 if mask1.sum() == 0 or mask2.sum() == 0:
                     continue
@@ -590,10 +580,17 @@ class TRNA_plot:
                 else:
                     merge_how = 'inner'
 
+                # Merge all samples in each group:
+                sele_cols = merge_on + ['RPM', 'charge']
+                m1 = charge_df_type[mask1].copy()
+                m1 = m1[sele_cols].groupby(sele_cols[:-2], as_index=False).agg({'RPM': 'mean', 'charge': 'mean'}).reset_index(drop=True)
+                m2 = charge_df_type[mask2].copy()
+                m2 = m2[sele_cols].groupby(sele_cols[:-2], as_index=False).agg({'RPM': 'mean', 'charge': 'mean'}).reset_index(drop=True)
+                
                 # Merge the two:
                 m12 = pd.merge(
-                    charge_df_type[mask1],
-                    charge_df_type[mask2],
+                    m1,
+                    m2,
                     how=merge_how,
                     on=merge_on,
                     left_index=False,
@@ -634,144 +631,6 @@ class TRNA_plot:
                 else:
                     g1.set_xlabel('Abundance (RPM), {}'.format(nam1));
                     g1.set_ylabel('Abundance (RPM), {}'.format(nam2));
-
-                # Write to PDF file:
-                fig.tight_layout()
-                pp.savefig(fig, bbox_inches='tight')
-                plt.close(fig)
-
-    def plot_abundance_corr(self, sample_pairs=None, sample_unique_pairs=None, \
-        plot_type='aa', charge_plot=False, log=False, plot_name='abundance_corr_plot_aa', \
-        min_obs=100, sample_list=None, verbose=True, sample_list_exl=None, \
-        bc_list_exl=None, one2one_corr=False):
-
-        if plot_type == 'aa':
-            charge_df_type = self.charge_filt['aa'].copy()
-            merge_on = ['amino_acid', 'mito_codon', 'Ecoli_ctr']
-        elif plot_type == 'codon':
-            charge_df_type = self.charge_filt['codon'].copy()
-            merge_on = ['AA_codon', 'mito_codon', 'Ecoli_ctr']
-        elif plot_type == 'transcript':
-            charge_df_type = self.charge_filt['tr'].copy()
-            merge_on = ['tRNA_annotation', 'mito_codon', 'Ecoli_ctr']
-        else:
-            raise Exception('Unknown plot type specified: {}\nValid strings are either either "aa", "codon" or "transcript".'.format(plot_type))
-
-        if charge_plot:
-            metric = 'charge'
-            count_col = self.charge_count_col
-        else:
-            metric = 'RPM'
-            count_col = self.RPM_count_col
-
-        # Enforce minimum observations,
-        # and not Ecoli control:
-        min_obs_mask = (charge_df_type[count_col] > min_obs) & ~charge_df_type['Ecoli_ctr']
-        charge_df_type = charge_df_type[min_obs_mask]
-
-        if not sample_pairs is None:
-            assert(len(sample_pairs[0]) == len(sample_pairs[1]))
-            pair_list = sample_pairs
-
-            # Exclude samples/barcodes:
-            mask_exl = np.array([True]*len(charge_df_type))
-            if not sample_list_exl is None:
-                for snam in sample_list_exl:
-                    mask_exl &= (charge_df_type['sample_name_unique'] != snam)
-            if not bc_list_exl is None:
-                for bc in bc_list_exl:
-                    mask_exl &= (charge_df_type['barcode'] != bc)
-            charge_df_type = charge_df_type[mask_exl]
-            
-            # For sample names, merge replicates by taking the mean:
-            colnames = charge_df_type.columns
-            gr_cols = colnames.drop(['sample_name_unique', 'replicate', 'barcode', \
-                                     'count', 'UMIcount', 'A_count', 'C_count', \
-                                     'RPM', 'charge'])
-            charge_df_type = charge_df_type.groupby(list(gr_cols), as_index=False).agg({'RPM': 'mean', 'charge': 'mean'}).reset_index(drop=True)
-            charge_df_type_stdev = charge_df_type.groupby(list(gr_cols), as_index=False).agg({'RPM': 'std', 'charge': 'std'}).reset_index(drop=True)
-        elif not sample_unique_pairs is None:
-            assert(len(sample_unique_pairs[0]) == len(sample_unique_pairs[1]))
-            pair_list = sample_unique_pairs
-        else:
-            raise Exception('Neither sample_pairs nor sample_unique_pairs lists were provided.')
-
-        if sample_list is None:
-            sample_list = list(self.sample_df['sample_name'].drop_duplicates())
-
-        if verbose:
-            print('\nNow plotting sample pairs:', end='')
-
-
-        # Print each plot to the same PDF file:
-        corr_fnam = '{}/{}.pdf'.format(self.plotting_dir_abs, plot_name)
-        with PdfPages(corr_fnam) as pp:
-            # Plot each pair:
-            for p1, p2 in zip(*pair_list):
-                # Either as unique samples are with replicates:
-                if not sample_pairs is None:
-                    mask1 = charge_df_type['sample_name'] == p1
-                    mask2 = charge_df_type['sample_name'] == p2
-                else:
-                    mask1 = charge_df_type['sample_name_unique'] == p1
-                    mask2 = charge_df_type['sample_name_unique'] == p2
-
-                if mask1.sum() == 0 or mask2.sum() == 0:
-                    continue
-                print('  ({} - {})'.format(p1, p2), end='')
-
-                # If charge is plotted both samples
-                # have to be present, if RPM is plotted
-                # it can be zero in one sample and >0 in another:
-                if not charge_plot and min_obs == 0:
-                    merge_how = 'outer'
-                else:
-                    merge_how = 'inner'
-
-                # Merge the two:
-                m12 = pd.merge(
-                    charge_df_type[mask1],
-                    charge_df_type[mask2],
-                    how=merge_how,
-                    on=merge_on,
-                    left_index=False,
-                    right_index=False,
-                    sort=True,
-                    suffixes=("_1", "_2"),
-                    copy=True,
-                    indicator=False,
-                    validate=None,
-                )
-                m12 = m12.fillna(0)
-
-                # Handle if log transform is requested:
-                if log:
-                    mask0 = (m12[metric+'_1'] > 0) & (m12[metric+'_2'] > 0)
-                    m12 = m12[mask0]
-                    m12[metric+'_1'] = np.log10(m12[metric+'_1'])
-                    m12[metric+'_2'] = np.log10(m12[metric+'_2'])
-
-                # Plot the scatterplot:
-                fig, ax = plt.subplots(1, 1, figsize=(7, 6))
-                g1 = sns.regplot(ax=ax, data=m12, x=metric+'_1', y=metric+'_2')
-                if not charge_plot or one2one_corr:
-                    xy_min = [min(g1.get_xlim()), min(g1.get_ylim())]
-                    xy_max = [max(g1.get_xlim()), max(g1.get_ylim())]
-                    ax.plot([max(xy_min), min(xy_max)], [max(xy_min), min(xy_max)], c='r')
-
-                # Set axis/title text:
-                g1.set_title('Correlation between {} and {}'.format(p1, p2))
-                # g1.grid(True, axis='y')
-
-                if charge_plot is True:
-                    g1.set_xlabel('Charge (%), {}'.format(p1));
-                    g1.set_ylabel('Charge (%), {}'.format(p2));
-                elif log is True:
-                    g1.set_xlabel('Abundance (log10 RPM), {}'.format(p1));
-                    g1.set_ylabel('Abundance (log10 RPM), {}'.format(p2));
-                else:
-                    g1.set_xlabel('Abundance (RPM), {}'.format(p1));
-                    g1.set_ylabel('Abundance (RPM), {}'.format(p2));
 
                 # Write to PDF file:
                 fig.tight_layout()
