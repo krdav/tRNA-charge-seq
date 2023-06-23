@@ -550,12 +550,12 @@ class UMI_trim:
     check_input -- Check if input files exist (default True)
     UMI_len -- UMI length (default 10)
     UMI_bins -- Number of possible UMIs (default 4^9 x 2)
-    downsample_absolute -- Maximum number of trimmed UMI sequences, randomly choose for downsampling (default 2.5e6)
+    downsample_absolute -- Maximum number of trimmed UMI sequences, randomly choose for downsampling (default 2e6)
     downsample_percentile -- Determine the 'downsample_absolute' variable as a percentile of the number of trimmed UMI sequences in all input samples (default False)
     '''
     def __init__(self, dir_dict, sample_df, UMI_end={'T', 'C'}, \
                  overwrite_dir=False, check_input=True, UMI_len=10, \
-                 UMI_bins=4**9*2, downsample_absolute=2.5e6, \
+                 UMI_bins=4**9*2, downsample_absolute=2e6, \
                  downsample_percentile=False):
         # Calculate the number of possible UMIs,
         # 9x random nt. (A/G/T/C) and one purine (A/G)
