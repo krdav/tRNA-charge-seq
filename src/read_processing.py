@@ -16,9 +16,10 @@ class AR_merge:
     Keyword arguments:
     AR_threads -- Threads specified to AdapterRemoval (default 4)
     overwrite_dir -- Overwrite old merge folder if any exists (default False)
+    check_input -- Check if input files exist (default True)
     '''
     def __init__(self, dir_dict, inp_file_df, MIN_READ_LEN, \
-                 AR_threads=4, overwrite_dir=False):
+                 AR_threads=4, overwrite_dir=False, check_input=True):
         # Input:
         self.inp_file_df, self.MIN_READ_LEN = inp_file_df, MIN_READ_LEN
         self.dir_dict = dir_dict
@@ -28,13 +29,14 @@ class AR_merge:
         self.AR_cmd_tmp = ["AdapterRemoval", "--bzip2", "--preserve5p", "--collapse", "--minalignmentlength", "10", "--threads", str(AR_threads)]
         self.AR_overwrite = True
 
-        # Check files exists before starting:
         self.seq_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['seq_dir'])
-        for _, row in self.inp_file_df.iterrows():
-            fnam_mate1 = '{}/{}'.format(self.seq_dir_abs, row['fastq_mate1_filename'])
-            fnam_mate2 = '{}/{}'.format(self.seq_dir_abs, row['fastq_mate2_filename'])
-            assert(os.path.exists(fnam_mate1))
-            assert(os.path.exists(fnam_mate2))
+        # Check files exists before starting:
+        if check_input:
+            for _, row in self.inp_file_df.iterrows():
+                fnam_mate1 = '{}/{}'.format(self.seq_dir_abs, row['fastq_mate1_filename'])
+                fnam_mate2 = '{}/{}'.format(self.seq_dir_abs, row['fastq_mate2_filename'])
+                assert(os.path.exists(fnam_mate1))
+                assert(os.path.exists(fnam_mate2))
 
         # Make output folder:
         self._make_dir(overwrite_dir)
