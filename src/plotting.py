@@ -1052,7 +1052,8 @@ AAA2A = {
 'eColiLys': 'K',
 'eColiThr': 'T',
 'iMet': 'M',
-'fMet': 'M'
+'fMet': 'M',
+'Sup': 'X'
 }
 
 
