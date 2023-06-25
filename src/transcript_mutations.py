@@ -760,7 +760,7 @@ class TM_analysis:
                                     min_count_show=200, \
                                     sample_pairs=None, sample_unique_pairs=None, \
                                     sample_pairs_col='sample_name', \
-                                    tr_compare_list=None, \
+                                    tr_compare_list_inp=None, \
                                     anno_substring_compare=None,\
                                     sample_list_exl=None, bc_list_exl=None,
                                     freq_avg_weighted=True, \
@@ -778,7 +778,7 @@ class TM_analysis:
         sample_list_exl -- List of unique sample names, using the sample_name_unique column, to exclude from any comparison (default None)
         bc_list_exl -- List of barcodes to exclude from any comparison (default None)
         anno_substring_compare -- Substring that must be in the annotation of the transcripts to compare (default None)
-        tr_compare_list -- List of transcript names to compare. If None, using the topN parameter (default None)
+        tr_compare_list_inp -- List of transcript names to compare. If None, using the topN parameter (default None)
         topN -- Number of transcripts to plot. Taken from a list ordered by the difference between the sample pairs (default 10)
         topN_select -- The metric to calculate the difference between samples. Choose between 'max_diff', 'mean_diff' or 'mean_square' (default 'max_diff')
         species -- Species to plot (default 'human')
@@ -847,14 +847,14 @@ class TM_analysis:
                                                            species, min_count_show, \
                                                            data_type, mito, topN_select, \
                                                            list_to_sort=tr_compare_list)
-                elif tr_compare_list is None:
+                elif tr_compare_list_inp is None:
                     # Sort annotations according to largest distance between samples:
                     topN_anno = self._sort_freq_diff(tr_muts_combi_s1, tr_muts_combi_s2, \
                                                      species, min_count_show, data_type, \
                                                      mito, topN_select)
                     tr_compare_list = topN_anno[:topN]
                 else:
-                    pass
+                    tr_compare_list = tr_compare_list_inp
 
                 # Get data for plotting.
                 # The mutation matrix is going to contain the
