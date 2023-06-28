@@ -163,7 +163,7 @@ class TRNA_plot:
         if self.excl_align_gap:
             row_mask &= (~self.all_stats['align_gap'])
         if self.excl_09_fmax:
-            row_mask &= (~self.all_stats['fmax_score>0.9'])
+            row_mask &= (self.all_stats['fmax_score>0.9'])
         charge_df = self.all_stats.loc[row_mask, self.stats_agg_cols].copy()
         charge_df = charge_df.groupby(self.stats_agg_cols[:-2], as_index=False).agg({'count': "sum", 'UMIcount': "sum"}).reset_index(drop=True)
 
