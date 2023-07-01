@@ -1,5 +1,6 @@
 import sys, os, shutil, bz2, copy, contextlib, gc
 import pickle
+from natsort import natsorted
 from subprocess import Popen, PIPE, STDOUT
 from Bio import SeqIO
 from Bio import Align
@@ -721,13 +722,13 @@ class TM_analysis:
             Z = linkage(dist_mat, 'ward', optimal_ordering=True)
             dn = dendrogram(Z, no_plot=True)
             sorted_anno = [anno_topN_nozero[i] for i in dn['leaves']]
-            mut_mat_df_plot = mut_mat_df.loc[sorted_anno, :]
+            mut_mat_df_plot = mut_mat_df.loc[sorted_anno, :].copy()
         elif type(sort_rows) == list:
             sorted_anno = [sanno for sanno in sort_rows if sanno in anno_topN_nozero]
-            mut_mat_df_plot = mut_mat_df.loc[sorted_anno, :]
+            mut_mat_df_plot = mut_mat_df.loc[sorted_anno, :].copy()
         else:
             sorted_anno = anno_topN_nozero
-            mut_mat_df_plot = mut_mat_df.loc[sorted_anno, :]
+            mut_mat_df_plot = mut_mat_df.loc[sorted_anno, :].copy()
 
         # Adjust the plot size and generate it:
         y_scaler = 15/60
@@ -761,7 +762,7 @@ class TM_analysis:
                                     sample_pairs=None, sample_unique_pairs=None, \
                                     sample_pairs_col='sample_name', \
                                     tr_compare_list_inp=None, \
-                                    anno_substring_compare=None,\
+                                    anno_substring_compare=None, \
                                     sample_list_exl=None, bc_list_exl=None,
                                     freq_avg_weighted=True, \
                                     topN=10, topN_select='max_diff'):
@@ -962,6 +963,351 @@ class TM_analysis:
         # Sort annotations according to largest distance between samples:
         topN_anno = [tup[0] for tup in sorted(topN_anno, key=lambda x: x[1], reverse=True)]
         return(topN_anno)
+
+    def plot_transcript_mut_cluster(self, species='human', \
+                                    plot_name='tr-mut_matrix_clust', \
+                                    mito=False, data_type='mut', \
+                                    min_count_show=200, \
+                                    anno_substring_incl=None, \
+                                    sample_list_incl=None, \
+                                    sample_list_exl=None, bc_list_exl=None,
+                                    dist_metric='euclidean', \
+                                    linkage_method='ward', \
+                                    plot_compact=False, \
+                                    right_align=True, \
+                                    vmax=None):
+        '''
+        Cluster mutation, gap or RT stop data from 
+        a set of samples for each transcript annotation requested.
+        Then plot the clustered data as a heatmap
+        for each transcript annotation.
+
+        Keyword arguments:
+        sample_list_incl -- List of unique sample names, using the "sample_name_unique" column, to include in clustering (default None)
+        sample_list_exl -- List of unique sample names, using the "sample_name_unique" column, to exclude from clustering (default None)
+        bc_list_exl -- List of barcodes to exclude from clustering (default None)
+        anno_substring_incl -- Substring that must be in the annotation of the transcripts to cluster (default None)
+        species -- Species to plot (default 'human')
+        plot_name -- Plot filename (default 'tr-mut_matrix_clust')
+        mito -- Only plot mitochondrial transcripts (default False)
+        data_type -- Data type to cluster. Choose between 'mut', 'gap' or 'RTstops' (default 'mut')
+        min_count_show -- Minimum observations of a position to be shown (default 200)
+        dist_metric -- The metric to calculate the distance between samples. Passed directly to scipy.spatial.distance.pdist (default 'euclidean')
+        linkage_method -- The clustering method used. Passed directly to scipy.cluster.hierarchy.linkage (default 'ward')
+        plot_compact -- Make rows on heatmap compact (default False)
+        right_align -- Right align data (default True)
+        vmax -- Max value of heatmap range. Passed directly to seaborn.heatmap (default None)
+        '''
+
+        if data_type not in ['mut', 'gap', 'RTstops']:
+            print('The data_type input variable needs to be either \'mut\', \'gap\' or \'RTstops\'. Found {}'.format(data_type))
+
+        # If sample inclusion list is not provided
+        # include all samples, minus those in the
+        # exclusion lists:
+        if sample_list_incl is None:
+            # Exclude samples/barcodes:
+            mask_incl = np.array([True]*len(self.sample_df))
+            if not sample_list_exl is None:
+                for snam in sample_list_exl:
+                    mask_incl &= (self.sample_df['sample_name_unique'] != snam)
+            if not bc_list_exl is None:
+                for bc in bc_list_exl:
+                    mask_incl &= (self.sample_df['barcode'] != bc)
+        else:
+            mask_incl = np.array([False]*len(self.sample_df))
+            sample_list_incl_cp = copy.deepcopy(sample_list_incl)
+            for snam in sample_list_incl:
+                mask_found = (self.sample_df['sample_name_unique'] == snam)
+                mask_incl |= mask_found
+                if mask_found.sum() > 0:
+                    sample_list_incl_cp.pop(sample_list_incl_cp.index(snam))
+            if len(sample_list_incl_cp) > 0:
+                print('Warning: {} of the provided samples were not found. {}'.format(len(sample_list_incl_cp), sample_list_incl_cp))
+
+        # All the samples the cluster:
+        sample_list = list(self.sample_df.loc[mask_incl, 'sample_name_unique'].values)
+        tr_muts_combi = self._combine_tr_muts(sample_list, freq_avg_weighted=False)
+        # Sort according to observations:
+        anno_sorted = self._sort_anno(tr_muts_combi, species, mito=mito)
+        anno_sorted = [anno_sorted[i][0] for i in range(len(anno_sorted))]
+        # Get list of annotations to plot:
+        if type(anno_substring_incl) == str:
+            anno_list = [anno for anno in anno_sorted if anno_substring_incl in anno]
+        elif type(anno_substring_incl) == list:
+            anno_list = list()
+            for substr in anno_substring_incl:
+                anno_set = set(anno_list)
+                anno_list.extend([anno for anno in anno_sorted if substr in anno and anno not in anno_set])
+        else:
+            anno_list = anno_sorted
+            if not anno_substring_incl is None:
+                print('Did not understand "anno_substring_incl" provided. Provide either list or str. Continuing with all annotations.')
+
+        # Print each plot to the same PDF file:
+        plot_fnam = '{}/{}.pdf'.format(self.TM_dir_abs, plot_name)
+        with PdfPages(plot_fnam) as pp:
+            # Process each transcript annotation:
+            for anno in anno_list:
+                # Find the mutations and insert them into a matrix:
+                mut_mat = np.zeros((len(sample_list), self.longest_tRNA))
+                tr_muts_snam = self._combine_tr_muts([sample_list[0]], freq_avg_weighted=False)
+                _, master_min_count_mask = self._get_mut_freq_filted(tr_muts_snam, species, anno, \
+                                                                     min_count_show, data_type)
+                for row_i, snam in enumerate(sample_list):
+                    # Get mutations for each sample:
+                    tr_muts_snam = self._combine_tr_muts([snam], freq_avg_weighted=False)
+                    freq_mut, min_count_mask = self._get_mut_freq_filted(tr_muts_snam, species, anno, \
+                                                                         min_count_show, data_type)
+                    # Skip annotation if sample is filtered:
+                    if freq_mut is None:
+                        print('Skipping annotation: {}\nNot enough counts for sample: {}'.format(anno, snam))
+                        break
+                    # Add mutations for matrix:
+                    if right_align:
+                        mut_mat[row_i, -len(freq_mut):] = freq_mut
+                    else:
+                        mut_mat[row_i, :len(freq_mut)] = freq_mut
+                    master_min_count_mask &= min_count_mask
+                
+                # Do not attempt to plot filtered data:
+                if freq_mut is None:
+                    continue
+                if master_min_count_mask.sum() == 0:
+                    print('Skipping annotation: {}\nNot enough counts.'.format(anno))
+                    continue
+
+                # Mark masked positions by "X":
+                X_mat = np.empty_like(mut_mat, dtype=str)
+                X_mat[:, :] = 'x'
+                unmask = np.array(['' if m else 'x' for m in master_min_count_mask])
+                # Streamline min_count_mask for all samples:
+                for row_i, snam in enumerate(sample_list):
+                    if right_align:
+                        mut_mat[row_i, -len(freq_mut):] *= master_min_count_mask
+                        X_mat[row_i, -len(freq_mut):] = unmask
+                    else:
+                        mut_mat[row_i, :len(freq_mut)] *= master_min_count_mask
+                        X_mat[row_i, :len(freq_mut)] = unmask
+            
+                # Transform mutation matrix to dataframe:
+                seq_idx_str = list(map(str, range(mut_mat.shape[1])))
+                mut_mat_df = pd.DataFrame(mut_mat, columns=seq_idx_str, index=sample_list)
+                X_mat_df = pd.DataFrame(X_mat, columns=seq_idx_str, index=sample_list)
+
+                # Cluster samples:
+                dist_mat = pdist(mut_mat, metric=dist_metric)
+                Z = linkage(dist_mat, method=linkage_method, optimal_ordering=True)
+                dn = dendrogram(Z, no_plot=True)
+                sorted_samples = [sample_list[i] for i in dn['leaves']]
+                mut_mat_df_plot = mut_mat_df.loc[sorted_samples, :].copy()
+
+                # Adjust the plot size and generate it:
+                if plot_compact:
+                    y_scaler = 10/60
+                    y_len = y_scaler*len(mut_mat_df_plot)
+                    if y_len < 2.7:
+                        y_len = 2.7
+                else:
+                    y_scaler = 15/60
+                    y_len = y_scaler*len(mut_mat_df_plot)
+                    if y_len < 4:
+                        y_len = 4
+
+                # Generate figure:
+                fig, ax = plt.subplots(1, 1, figsize=(25, y_len))
+                g1 = sns.heatmap(mut_mat_df_plot, yticklabels=True, xticklabels=True, \
+                                 vmin=0, vmax=vmax, ax=ax, annot=X_mat_df, fmt='1');
+                ax.yaxis.set_tick_params(labelsize=11)
+                ax.xaxis.set_tick_params(labelsize=11)
+                if right_align:
+                    ax.set_xlabel("5' to 3' (filled in from right to left)", size=16)
+                else:
+                    ax.set_xlabel("5' to 3' (filled in from left to right)", size=16)
+                plot_title = 'Clustering on {}.'.format(anno)
+                ax.set_title(plot_title, fontsize=15)
+
+                # Write to PDF file:
+                fig.tight_layout()
+                pp.savefig(fig, bbox_inches='tight')
+                plt.close(fig)
+
+    def plot_transcript_mut_pos(self, tr_pos=34, species='human', \
+                                idx_start=1, \
+                                plot_name='tr-mut_pos', \
+                                mito=False, \
+                                min_count_show=200, \
+                                anno_substring_incl=None, \
+                                sample_list_incl=None, \
+                                sample_rep_col='sample_name', \
+                                sample_list_exl=None, bc_list_exl=None, \
+                                xlabel='', xlabel_rot=0):
+        '''
+        Make barplots showing the frequency/percentage data for
+        mutation, gap and RT stop on a single position from 
+        a set of samples for each transcript annotation requested.
+
+
+        Keyword arguments:
+
+        tr_pos -- Transcript position, counted from left to right, to plot (default 34)
+        idx_start -- "tr_pos" indexing (default 1)
+        sample_list_incl -- List of unique sample names, using the "sample_name_unique" column, to include (default None)
+        sample_list_exl -- List of unique sample names, using the "sample_name_unique" column, to exclude (default None)
+        bc_list_exl -- List of barcodes to exclude (default None)
+        anno_substring_incl -- Substring that must be in the annotation of the transcripts to plot (default None)
+        species -- Species to plot (default 'human')
+        plot_name -- Plot filename (default 'tr-mut_pos')
+        mito -- Only plot mitochondrial transcripts (default False)
+        min_count_show -- Minimum observations of a position to be shown (default 200)
+        sample_rep_col -- Column in "sample_df" to use for defining sample replicates (default 'sample_name')
+        xlabel -- Label on x-axis (default '')
+        xlabel_rot -- Rotation of the transcript annotation used as xtick label (default 0)
+        '''
+
+        # Map transcript position to normal zero indexing:
+        idx_pos = (tr_pos - idx_start)
+
+        data_return = dict()  # Pick up and return data
+        # If sample inclusion list is not provided
+        # include all samples, minus those in the
+        # exclusion lists:
+        if sample_list_incl is None:
+            # Exclude samples/barcodes:
+            mask_incl = np.array([True]*len(self.sample_df))
+            if not sample_list_exl is None:
+                for snam in sample_list_exl:
+                    mask_incl &= (self.sample_df['sample_name_unique'] != snam)
+            if not bc_list_exl is None:
+                for bc in bc_list_exl:
+                    mask_incl &= (self.sample_df['barcode'] != bc)
+        else:
+            mask_incl = np.array([False]*len(self.sample_df))
+            sample_list_incl_cp = copy.deepcopy(sample_list_incl)
+            for snam in sample_list_incl:
+                mask_found = (self.sample_df['sample_name_unique'] == snam)
+                mask_incl |= mask_found
+                if mask_found.sum() > 0:
+                    sample_list_incl_cp.pop(sample_list_incl_cp.index(snam))
+            if len(sample_list_incl_cp) > 0:
+                print('Warning: {} of the provided samples were not found. {}'.format(len(sample_list_incl_cp), sample_list_incl_cp))
+
+        # All the samples the cluster:
+        sample_list = list(self.sample_df.loc[mask_incl, 'sample_name_unique'].values)
+        tr_muts_combi = self._combine_tr_muts(sample_list, freq_avg_weighted=False)
+        # Sort according to observations:
+        anno_sorted = self._sort_anno(tr_muts_combi, species, mito=mito)
+        anno_sorted = [anno_sorted[i][0] for i in range(len(anno_sorted))]
+        # Get list of annotations to plot:
+        if type(anno_substring_incl) == str:
+            anno_list = [anno for anno in anno_sorted if anno_substring_incl in anno]
+        elif type(anno_substring_incl) == list:
+            anno_list = list()
+            for substr in anno_substring_incl:
+                anno_set = set(anno_list)
+                anno_list.extend([anno for anno in anno_sorted if substr in anno and anno not in anno_set])
+        else:
+            anno_list = anno_sorted
+            if not anno_substring_incl is None:
+                print('Did not understand "anno_substring_incl" provided. Provide either list or str. Continuing with all annotations.')
+
+        sample_list_mask = self.sample_df['sample_name_unique'].isin(sample_list)
+        Nplot_groups = len(set(self.sample_df[sample_list_mask][sample_rep_col]))
+        # Print each plot to the same PDF file:
+        plot_fnam = '{}/{}.pdf'.format(self.TM_dir_abs, plot_name)
+        with PdfPages(plot_fnam) as pp:
+            # Process each transcript annotation:
+            for anno in anno_list:
+                plot_width = Nplot_groups * 4.5
+                fig = plt.figure(figsize=(plot_width, 5))
+                gs = fig.add_gridspec(1, 3)
+                ax1 = fig.add_subplot(gs[:, 0])
+                ax2 = fig.add_subplot(gs[:, 1])
+                ax3 = fig.add_subplot(gs[:, 2])
+                print_plot = True
+
+                # Plot all three types of data:
+                for data_type, ax in zip(['mut', 'gap', 'RTstops'], [ax1, ax2, ax3]):
+                    # Find the mutations and insert them into a matrix:
+                    tr_muts_snam = self._combine_tr_muts([sample_list[0]], freq_avg_weighted=False)
+                    _, master_min_count_mask = self._get_mut_freq_filted(tr_muts_snam, species, anno, \
+                                                                         min_count_show, data_type)
+                    # Skip annotation if sample is filtered:
+                    if master_min_count_mask is None:
+                        print('Skipping annotation: {}\nNot enough counts for sample: {}'.format(anno, sample_list[0]))
+                        print_plot = False
+                        break
+                    mut_mat = np.zeros((len(sample_list), len(master_min_count_mask)))
+                    # Collect data for each sample:
+                    for row_i, snam in enumerate(sample_list):
+                        # Get mutations for each sample:
+                        tr_muts_snam = self._combine_tr_muts([snam], freq_avg_weighted=False)
+                        freq_mut, min_count_mask = self._get_mut_freq_filted(tr_muts_snam, species, anno, \
+                                                                             min_count_show, data_type)
+                        # Skip annotation if sample is filtered:
+                        if freq_mut is None:
+                            print('Skipping annotation: {}\nNot enough counts for sample: {}'.format(anno, snam))
+                            break
+                        # Add mutations for matrix:
+                        mut_mat[row_i, :] = freq_mut
+                        master_min_count_mask &= min_count_mask
+                    
+                    # Do not attempt to plot filtered data:
+                    if freq_mut is None:
+                        print_plot = False
+                        continue
+                    if not master_min_count_mask[idx_pos]:
+                        print('Skipping annotation: {}\nNot enough counts.'.format(anno))
+                        print_plot = False
+                        continue
+
+                    # Transform mutation matrix to dataframe:
+                    mut_pos_df = pd.DataFrame(zip(sample_list, mut_mat[:, idx_pos]), \
+                                              columns=['sample_name_unique', 'mut_freq'])
+                    mut_pos_df = mut_pos_df.merge(self.sample_df, on='sample_name_unique', suffixes=('', '_2'))
+                    assert(sample_rep_col in mut_pos_df.columns)
+                    try:
+                        data_return[anno][data_type] = mut_pos_df.copy()
+                    except KeyError:
+                        data_return[anno] = {mt: {} for mt in ['mut', 'gap', 'RTstops']}
+                        data_return[anno][data_type] = mut_pos_df.copy()
+                    
+                    # Plot:
+                    x_order = natsorted(set(mut_pos_df[sample_rep_col]))
+                    g1 = sns.barplot(ax=ax, data=mut_pos_df, x=sample_rep_col, y='mut_freq', \
+                                     capsize=0.1, edgecolor=".2", linewidth=2, alpha=0.8, \
+                                     order=x_order)
+                    g2 = sns.swarmplot(ax=ax, data=mut_pos_df, x=sample_rep_col, y='mut_freq', \
+                                       color='grey', alpha=0.7, edgecolor='black', dodge=True, \
+                                       linewidth=0.8, size=6, marker='X', warn_thresh=1, order=x_order)
+
+                    g1.set(xlabel=xlabel)
+                    g1.set_xticklabels(g1.get_xticklabels(), rotation=xlabel_rot)
+                    ymin, ymax = g1.get_ylim()
+                    if ymin < 0:
+                        ymin = 0
+                    if data_type == 'mut':
+                        g1.set_title('Mutation frequency')
+                        g1.set(ylabel='Frequency')
+                    elif data_type == 'gap':
+                        g1.set_title('Gap frequency')
+                        g1.set(ylabel='Frequency')
+                    else:
+                        g1.set_title('RT stop')
+                        g1.set(ylabel='Fall off (%)')
+                        ymax = 100
+                    g1.set(ylim=(ymin, ymax))
+
+                plot_title = 'Mutation data for {}, position {}.'.format(anno, tr_pos)
+                fig.suptitle(plot_title, fontsize=15)
+
+                if print_plot:
+                    # Write to PDF file:
+                    fig.tight_layout()
+                    pp.savefig(fig, bbox_inches='tight')
+                plt.close(fig)
+
+        return(data_return)
 
     def _get_mut_freq_filted(self, tr_muts_combi, species, anno, \
                              min_count_show, data_type):
