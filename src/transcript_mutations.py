@@ -565,7 +565,7 @@ class TM_analysis:
         png_dpi -- DPI for plot as PNG. If False, only PDF is made (default False)
         no_plot_return -- Do not return plot (default False)
         mito -- Only plot mitochondrial transcripts (default False)
-        RTstops -- qwert (default False)
+        RTstops -- Plot RT fall off instead of coverage (default False)
         min_obs -- Minimum observations of a position to be shown. Only valid for plotting RT stops (default 100)
         sort_rows -- Sort the plotted rows using hierarchical clustering (default True)
         sample_list -- List of samples to combine for plotting. If None, all samples with mutation data are used (default None)
@@ -1389,14 +1389,14 @@ class TM_analysis:
     def _calc_RTstops(self, tr_muts_combi, anno, species):
         '''
         Calculate the RT stops, also referred to as "termination signal"
-        in Wang et al. 2020.
+        in Wang et al. 2021.
         Calculated as: 100 * (cov(i+1) - cov(i)) / cov(i+1)
         '''
         # Count all observations for a given positions:
         counts_all = tr_muts_combi[species][anno]['PSCM'].sum(1).values
         counts_all_p1 = np.roll(counts_all, -1)
         counts_all_p1[-1] = counts_all[-1]
-        # Calculate RTstops (similar to Wang et al. 2020):
+        # Calculate RTstops (similar to Wang et al. 2021):
         RTstops_arr = 100 * np.divide((counts_all_p1 - counts_all), counts_all_p1, \
                                       out=np.zeros_like(counts_all, dtype=np.float64), \
                                       where=counts_all_p1!=0)
