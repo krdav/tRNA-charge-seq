@@ -1,0 +1,18 @@
+{
+  "version": "1.2",
+  "dbname": "hg38-all-tRNAs.fa",
+  "dbtype": "Protein",
+  "db-version": 4,
+  "description": "hg38-all-tRNAs.fa",
+  "number-of-letters": 35608,
+  "number-of-sequences": 455,
+  "last-updated": "2023-07-17T19:34:00",
+  "number-of-volumes": 1,
+  "bytes-total": 82101,
+  "bytes-to-cache": 39784,
+  "files": [
+    "hg38-all-tRNAs.fa.phr",
+    "hg38-all-tRNAs.fa.pin",
+    "hg38-all-tRNAs.fa.psq"
+  ]
+}
