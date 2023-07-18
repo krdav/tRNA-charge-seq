@@ -10,6 +10,9 @@ This database is great because it sorts out a complex mix of pseudogenes and non
 For human:  
 `wget http://gtrnadb.ucsc.edu/genomes/eukaryota/Hsapi38/hg38-mature-tRNAs.fa`
 
+For human not filtered:
+`wget https://raw.githubusercontent.com/krdav/mim-tRNAseq/master/mimseq/data/hg38-eColitK/hg38-tRNAs-all.fa`
+
 For mouse:  
 `wget http://gtrnadb.ucsc.edu/genomes/eukaryota/Mmusc10/mm10-mature-tRNAs.fa`
 
@@ -36,6 +39,9 @@ Note that the control sequences are hard-coded in the `tRNAdb_tool.py` script...
 
 Merge and format human:  
 `./tRNAdb_tool.py hg19-mitotRNAs.fa hg38-mature-tRNAs.fa > human/hg38-tRNAs.fa`
+
+Merge and format human not filtered:
+`./tRNAdb_tool.py hg19-mitotRNAs.fa hg38-tRNAs-all.fa > human_not-filtered/hg38-all-tRNAs.fa`
 
 Merge and format mouse:  
 `./tRNAdb_tool.py mm10-mitotRNAs.fa mm10-mature-tRNAs.fa > mouse/mm10-tRNAs.fa`
