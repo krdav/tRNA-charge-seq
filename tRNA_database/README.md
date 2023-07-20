@@ -12,7 +12,7 @@ Note that the control sequences are hard-coded in the `tRNAdb_tool.py` script...
 
 
 
-For human:  
+For human:
 ```
 mkdir human
 mkdir hg38
@@ -25,7 +25,7 @@ cd ..
 ./tRNAdb_tool.py hg38/hg38-mitotRNAs.fa hg38/hg38-tRNAs-all.fa hg38/hg38-tRNAs-detailed.out hg38/hg38-tRNAs_name_map.txt > human/hg38-tRNAs.fa
 ```
 
-For mouse:  
+For mouse:
 ```
 mkdir mouse
 mkdir mm10
@@ -36,14 +36,14 @@ cd ..
 ./tRNAdb_tool.py mm10/mm10-mitotRNAs.fa mm10/mm10-mature-tRNAs.fa > mouse/mm10-tRNAs.fa
 ```
 
-For Ecoli (gtrnadb puts CCA at the end of the mature Ecoli tRNAs but not the mature human tRNAs...):  
+For Ecoli (gtrnadb puts CCA at the end of the mature Ecoli tRNAs but not the mature human tRNAs...):
 ```
 mkdir ecoli
 mkdir Esch_coli_K_12_MG1655
 cd Esch_coli_K_12_MG1655
 wget http://gtrnadb.ucsc.edu/genomes/bacteria/Esch_coli_K_12_MG1655/eschColi_K_12_MG1655-mature-tRNAs.fa
 cd ..
-./tRNAdb_tool_ecoli.py eschColi_K_12_MG1655-mature-tRNAs.fa > ecoli/ecoli-tRNAs.fa
+./tRNAdb_tool_ecoli.py Esch_coli_K_12_MG1655/eschColi_K_12_MG1655-mature-tRNAs.fa > ecoli/ecoli-tRNAs.fa
 ```
 
 
