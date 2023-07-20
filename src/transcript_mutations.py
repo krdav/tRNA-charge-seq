@@ -154,8 +154,8 @@ class TM_analysis:
             else:
                 print('Folder exists and overwrite set to false... Doing nothing.')
 
-    def find_muts(self, unique_anno=True, match_score=1, mismatch_score=-1, \
-                  open_gap_score=-2, extend_gap_score=-1, n_jobs=4, verbose=True, \
+    def find_muts(self, unique_anno=True, match_score=1, mismatch_score=-2, \
+                  open_gap_score=-3, extend_gap_score=-2, n_jobs=4, verbose=True, \
                   sample_list=None, max_5p_non_temp=10):
         '''
         Find mutations, gaps and RT stops in the input samples.
@@ -183,8 +183,8 @@ class TM_analysis:
         for idx, row in self.sample_df.iterrows():
             if row['sample_name_unique'] in sample_list:
                 data.append((idx, row, unique_anno, max_5p_non_temp, \
-                              match_score, mismatch_score, open_gap_score, \
-                              extend_gap_score, verbose))
+                             match_score, mismatch_score, open_gap_score, \
+                             extend_gap_score, verbose))
         with WorkerPool(n_jobs=n_jobs) as pool:
             results = pool.map(self._collect_transcript_muts, data)
         # Fill out the transcript mutations per sample:
@@ -1462,73 +1462,82 @@ class TM_analysis:
         aligner.extend_gap_score = extend_gap_score
 
         for species in tr_muts_combi:
-            for anno1 in tr_muts_combi[species]: # acceptor
-                target = tr_muts_combi[species][anno1]['seq']
-                # target_cov = tr_muts_combi[species][anno1]['PSCM'].sum(1)
-                ac1 = anno1.split('-')[2] # anticodon
-                tr_muts_combi[species][anno1]['seq_masked_exp'] = ''
+            for anno_acpt in tr_muts_combi[species]: # acceptor
+                seq_acpt = tr_muts_combi[species][anno_acpt]['seq']
+                seq_acpt_cov = tr_muts_combi[species][anno_acpt]['PSCM'].sum(1)
+                anticodon_acpt = anno_acpt.split('-')[2] # anticodon
+                tr_muts_combi[species][anno_acpt]['seq_masked_exp'] = ''
 
                 # Add masked characters from highly similar sequences:
-                for anno2 in tr_muts_combi[species]: # donor
+                for anno_dnr in tr_muts_combi[species]: # donor
                     # Skip sequences with different anticodon:
-                    if ac1 != anno2.split('-')[2]:
+                    if anticodon_acpt != anno_dnr.split('-')[2]:
                         continue
                     # Skip sequences with no masked characters to contribute:
-                    elif not 'seq_masked' in tr_muts_combi[species][anno2]:
+                    elif not 'seq_masked' in tr_muts_combi[species][anno_dnr]:
                         continue
 
-                    query = tr_muts_combi[species][anno2]['seq']
-                    max_score = match_score * max([len(target), len(query)])
+                    seq_dnr = tr_muts_combi[species][anno_dnr]['seq']
+                    max_score = match_score * max([len(seq_acpt), len(seq_dnr)])
                     min_score = max_score * frac_max_score
 
                     # Perform alignment and take out one:
-                    alignments = aligner.align(target, query)
+                    alignments = aligner.align(seq_acpt, seq_dnr)
                     alignment = alignments[0]
+                    # Acceptor = target (t)
+                    # Donor = query (q)
                     t_cor, q_cor = alignment.aligned
 
                     # Following enforces end-to-end coverage of the alignment
-                    # on both target and query:
-                    if t_cor[0][0] != 0 or q_cor[0][0] != 0 or t_cor[-1][1] != len(target) or q_cor[-1][1] != len(query):
+                    # on both seq_acpt and seq_dnr:
+                    if t_cor[0][0] != 0 or q_cor[0][0] != 0 or t_cor[-1][1] != len(seq_acpt) or q_cor[-1][1] != len(seq_dnr):
                         continue
                     # Also enforce minimum alignment score:
                     elif alignment.score < min_score:
                         continue
 
-                    # Concatenate the masked query that aligns to the target:
-                    q_masked = tr_muts_combi[species][anno2]['seq_masked']
+                    # Concatenate the masked seq_dnr that aligns to the seq_acpt:
+                    q_masked = tr_muts_combi[species][anno_dnr]['seq_masked']
                     q_masked_trans = list()
                     q_trans = list()
                     for i in range(0, len(q_cor)):
                         q_masked_trans.append(q_masked[q_cor[i][0]:q_cor[i][1]])
-                        q_trans.append(query[q_cor[i][0]:q_cor[i][1]])
-                        # Insert gaps when these appear in the query
-                        # i.e. characters in the target is unaligned:
+                        q_trans.append(seq_dnr[q_cor[i][0]:q_cor[i][1]])
+                        # Insert gaps when these appear in the seq_dnr
+                        # i.e. characters in the seq_acpt is unaligned:
                         if i < (len(q_cor)-1):
                             for j in range(t_cor[i+1][0] - t_cor[i][1]):
                                 q_masked_trans.append('-')
                                 q_trans.append('-')
                     q_masked_trans = ''.join(q_masked_trans)
                     q_trans = ''.join(q_trans)
-                    assert(len(q_masked_trans) == len(target))
-                    assert(len(q_trans) == len(target))
+                    assert(len(q_masked_trans) == len(seq_acpt))
+                    assert(len(q_trans) == len(seq_acpt))
 
                     # Update masked sequence:
-                    # if anno1 == anno2: move the _exp regardless of positional coverage
-                    #     tr_muts_combi[species][anno1]['seq_masked_exp'] = q_masked_trans
-                    if tr_muts_combi[species][anno1]['seq_masked_exp'] == '':
-                        # If "N" is found in the masked query then pick it out
-                        # otherwise stick to the target sequence:
-                        # Also, require target of masking to be the same nucleotide
-                        # as the "donor" (i.e. query) [tc == qc]:
-                        # seq_masked_exp = ''.join([qm if (cov < min_pos_count and tc == qc and qm == 'N') else tc for cov, tc, qc, qm in zip(target_cov, target, q_trans, q_masked_trans)])
-                        seq_masked_exp = ''.join([qm if (tc == qc and qm == 'N') else tc for tc, qc, qm in zip(target, q_trans, q_masked_trans)])
-                        tr_muts_combi[species][anno1]['seq_masked_exp'] = seq_masked_exp
+                    if anno_acpt == anno_dnr:
+                        # Move the _exp regardless of positional coverage:
+                        tr_muts_combi[species][anno_acpt]['seq_masked_exp'] = q_masked_trans
                     else:
-                        # Expand the masked character:
-                        t_masked = tr_muts_combi[species][anno1]['seq_masked_exp']
-                        # seq_masked_exp = ''.join([qm if (cov < min_pos_count and tc == qc and qm == 'N') else tc for cov, tc, qc, qm in zip(target_cov, t_masked, q_trans, q_masked_trans)])
-                        seq_masked_exp = ''.join([qm if (tc == qc and qm == 'N') else tc for tc, qc, qm in zip(t_masked, q_trans, q_masked_trans)])
-                        tr_muts_combi[species][anno1]['seq_masked_exp'] = seq_masked_exp
+                        if tr_muts_combi[species][anno_acpt]['seq_masked_exp'] == '':
+                            t_masked = seq_acpt
+                        else:
+                            t_masked = tr_muts_combi[species][anno_acpt]['seq_masked_exp']
+
+                        # If "N" is found in the masked seq_dnr then pick it out
+                        # otherwise stick to acceptor sequence (seq_acpt):
+                        # Also, require the acceptor of masking to be the same nucleotide
+                        # as the donor (i.e. seq_dnr) [tc == qc]
+                        # Finally, require low coverage to avoid forcing a mask
+                        # when there is coverage to suggest otherwise.
+                        seq_masked_exp_lst = list()
+                        for cov, tc, qc, qm in zip(seq_acpt_cov, t_masked, q_trans, q_masked_trans):
+                            if cov < min_pos_count and tc == qc and qm == 'N':
+                                seq_masked_exp_lst.append(qm)
+                            else:
+                                seq_masked_exp_lst.append(tc)
+                        seq_masked_exp = ''.join(seq_masked_exp_lst)
+                        tr_muts_combi[species][anno_acpt]['seq_masked_exp'] = seq_masked_exp
 
         # Collect statistics on the masked sequences:
         self.mask_stats = {sp: {} for sp in tr_muts_combi}
