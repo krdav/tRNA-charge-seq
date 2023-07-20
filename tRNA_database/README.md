@@ -3,51 +3,49 @@ This folder contains the tRNA transcript sequences that are used for alignment o
 The sequences have been formatted to work with subsequent processing so if new sequences, e.g. a new species, needs to be added they must be formatted correctly.
 
 
-### Getting tRNA sequences
-Mature (no introns) cytosolic tRNA transcripts can be downloaded from the gtRNAdb database.
-This database is great because it sorts out a complex mix of pseudogenes and non-transcribed tRNAs as well as providing mature tRNA sequences.
-
-For human:  
-`wget http://gtrnadb.ucsc.edu/genomes/eukaryota/Hsapi38/hg38-mature-tRNAs.fa`
-
-For human not filtered:
-`wget https://raw.githubusercontent.com/krdav/mim-tRNAseq/master/mimseq/data/hg38-eColitK/hg38-tRNAs-all.fa`
-
-For mouse:  
-`wget http://gtrnadb.ucsc.edu/genomes/eukaryota/Mmusc10/mm10-mature-tRNAs.fa`
-
-For Ecoli:
-`wget http://gtrnadb.ucsc.edu/genomes/bacteria/Esch_coli_K_12_MG1655/eschColi_K_12_MG1655-mature-tRNAs.fa`
-
-
-Mitochondrial tRNAs are not so complex as the nuclear encoded ones.
-One can basically look them up on the mitochondrial genome and copy them.
+### Getting, merging and formatting tRNA sequences
+tRNA transcripts have been annotated and deposited in the [gtRNAdb database](http://gtrnadb.ucsc.edu/).
+However, a transcripts few appear to be misannotated and the mitochondrial tRNAs are missing.
 The [mim-tRNAseq repo](https://github.com/nedialkova-lab/mim-tRNAseq) (Behrens et al. 2021) has compiled them and can be downloaded from my fork.
-
-For human:  
-`wget https://raw.githubusercontent.com/krdav/mim-tRNAseq/master/mimseq/data/hg19-eColitK/hg19-mitotRNAs.fa`
-
-For mouse:  
-`wget https://raw.githubusercontent.com/krdav/mim-tRNAseq/master/mimseq/data/mm10-eColitK/mm10-mitotRNAs.fa`
-
-
-
-### Merging and formatting
-Cyto/mito tRNA sequences are merged and formatted, and Ecoli Lys and Thr tRNAs sequences are added becuase these sequences are used as a spike-in controls.
+From these sequences, cyto/mito tRNA sequences are merged and formatted, introns are removed, post-transcriptional modifications added and Ecoli Lys and Thr tRNAs sequences are added because these sequences are used as a spike-in controls.
 Note that the control sequences are hard-coded in the `tRNAdb_tool.py` script...
 
 
-Merge and format human:  
-`./tRNAdb_tool.py hg19-mitotRNAs.fa hg38-mature-tRNAs.fa > human/hg38-tRNAs.fa`
 
-Merge and format human not filtered:
-`./tRNAdb_tool.py hg19-mitotRNAs.fa hg38-tRNAs-all.fa > human_not-filtered/hg38-all-tRNAs.fa`
+For human:  
+```
+mkdir human
+mkdir hg38
+cd hg38
+wget https://raw.githubusercontent.com/krdav/mim-tRNAseq/master/mimseq/data/hg38-eColitK/hg38-mitotRNAs.fa
+wget https://raw.githubusercontent.com/krdav/mim-tRNAseq/master/mimseq/data/hg38-eColitK/hg38-tRNAs-all.fa
+wget https://raw.githubusercontent.com/krdav/mim-tRNAseq/master/mimseq/data/hg38-eColitK/hg38-tRNAs-detailed.out
+wget https://raw.githubusercontent.com/krdav/mim-tRNAseq/master/mimseq/data/hg38-eColitK/hg38-tRNAs_name_map.txt
+cd ..
+./tRNAdb_tool.py hg38/hg38-mitotRNAs.fa hg38/hg38-tRNAs-all.fa hg38/hg38-tRNAs-detailed.out hg38/hg38-tRNAs_name_map.txt > human/hg38-tRNAs.fa
+```
 
-Merge and format mouse:  
-`./tRNAdb_tool.py mm10-mitotRNAs.fa mm10-mature-tRNAs.fa > mouse/mm10-tRNAs.fa`
+For mouse:  
+```
+mkdir mouse
+mkdir mm10
+cd mm10
+wget https://raw.githubusercontent.com/krdav/mim-tRNAseq/master/mimseq/data/mm10-eColitK/mm10-mitotRNAs.fa
+wget http://gtrnadb.ucsc.edu/genomes/eukaryota/Mmusc10/mm10-mature-tRNAs.fa
+cd ..
+./tRNAdb_tool.py mm10/mm10-mitotRNAs.fa mm10/mm10-mature-tRNAs.fa > mouse/mm10-tRNAs.fa
+```
 
-Merge and format Ecoli (gtrnadb puts CCA at the end of the mature Ecoli tRNAs but not the mature human tRNAs...):
-`./tRNAdb_tool_ecoli.py eschColi_K_12_MG1655-mature-tRNAs.fa > ecoli/ecoli-tRNAs.fa`
+For Ecoli (gtrnadb puts CCA at the end of the mature Ecoli tRNAs but not the mature human tRNAs...):  
+```
+mkdir ecoli
+mkdir Esch_coli_K_12_MG1655
+cd Esch_coli_K_12_MG1655
+wget http://gtrnadb.ucsc.edu/genomes/bacteria/Esch_coli_K_12_MG1655/eschColi_K_12_MG1655-mature-tRNAs.fa
+cd ..
+./tRNAdb_tool_ecoli.py eschColi_K_12_MG1655-mature-tRNAs.fa > ecoli/ecoli-tRNAs.fa
+```
+
 
 
 
@@ -65,7 +63,6 @@ This is due to a quirk in SWIPE, which will only allow us to specify a substitut
 This behavior of SWIPE makes sense in most applications, except when you want to "mask" positions in the reference sequences.
 However, specifying the sequence as protein and providing a custom substitution matrix will work fine.
 Masking of the reference can then be done by replacing the masked nt. with "N" and using an appropiate substitution matrix.
-
 
 
 
