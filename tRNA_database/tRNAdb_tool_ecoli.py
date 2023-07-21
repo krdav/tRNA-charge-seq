@@ -13,11 +13,11 @@ for record in SeqIO.parse(cyto_fnam, "fasta"):
     ID = record.id.split(' ')[0]
     ID = ID.replace('Escherichia_coli_str_K-12_substr', 'Escherichia_coli_str_K12_substr')
     assert(ID not in db_id_set)
-    if record.seq in seq_set or '-Und-NNN-' in ID:
+    seq = str(record.seq).upper().replace('U', 'T')
+    if seq in seq_set or '-Und-NNN-' in ID:
         continue
     db_id_set.add(ID)
-    seq_set.add(record.seq)
-    seq = str(record.seq).replace('U', 'T')
+    seq_set.add(seq)
     print('>{}'.format(ID))
     if 'His' in ID:
         print('G{}'.format(str(seq)))

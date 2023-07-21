@@ -71,7 +71,8 @@ for record in SeqIO.parse(mito_fnam, "fasta"):
     assert(record.id not in db_id_set)
     assert(record.seq not in seq_set)
     db_id_set.add(record.id)
-    seq_set.add(record.seq)
+    seq = str(record.seq).upper()
+    seq_set.add(seq)
     ID, sp, numb, AA, AC = record.id.split('|')
     '''mtdbD00000547|Homo_sapiens|9606|Thr|TGT'''
     '''>Homo_sapiens_mito_tRNA-Leu-TAA-1-1'''
@@ -79,9 +80,9 @@ for record in SeqIO.parse(mito_fnam, "fasta"):
     # Histidine tRNA post translational modification.
     # See Heinemann et al. 2012.
     if AA == 'His':
-        print('G{}CCA'.format(str(record.seq)))
+        print('G{}CCA'.format(seq))
     else:
-        print('{}CCA'.format(str(record.seq)))
+        print('{}CCA'.format(record.seq))
 
 
 intron_found = 0
@@ -92,12 +93,12 @@ for record in SeqIO.parse(cyto_fnam, "fasta"):
     '''>Homo_sapiens_tRNA-Ala-AGC-1-1'''
     ID = record.id.split(' ')[0]
     assert(ID not in db_id_set)
-    if record.seq in seq_set or '-Und-NNN-' in ID:
+    seq = str(record.seq).upper().replace('U', 'T')
+    if seq in seq_set or '-Und-NNN-' in ID:
         continue
     
     db_id_set.add(ID)
-    seq_set.add(record.seq)
-    seq = str(record.seq).replace('U', 'T')
+    seq_set.add(seq)
     print('>{}'.format(ID))
     
     # Cut out intro if any:
