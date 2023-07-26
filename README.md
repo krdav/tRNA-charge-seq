@@ -1,7 +1,12 @@
 # Charge tRNA-Seq
 This repository provides code and examples to process charge tRNA-Seq data as described in our [manuscript](www.somelink.com).
 
-(example)[projects/example/process_data.ipynb]
+[example](projects/example/process_data.ipynb)
+
+
+Only tested on Linux and MacOS.
+
+
 
 ### Input data
 This method takes in raw fastq paired-end reads.
@@ -24,6 +29,7 @@ The following needs to be installed and in the enviroment:
 
 
 The following Python packages and required and can be install with `pip` or `conda` commands:
+* jupyterlab
 * pandas
 * Biopython
 * numpy
@@ -38,17 +44,6 @@ The following Python packages and required and can be install with `pip` or `con
 * wand
     * Only required to render and display pdf pages in the Jupyter notebook example
 
-
-
-
-
-
-Only tested on Linux and MacOS.
-
-
-
-
-
-
+We recommend using an [Anaconda](https://www.anaconda.com/download) Python install which already has many of the above packages installed by default.
 
 
