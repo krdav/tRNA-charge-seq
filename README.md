@@ -1,7 +1,7 @@
 # Charge tRNA-Seq
 This repository provides code and examples to process charge tRNA-Seq data as described in our [manuscript](www.somelink.com).
 
-
+(example)[projects/example/process_data.ipynb]
 
 ### Input data
 This method takes in raw fastq paired-end reads.
