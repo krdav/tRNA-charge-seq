@@ -1,16 +1,16 @@
 # Charge tRNA-Seq
 This repository provides code and examples to process charge tRNA-Seq data as described in our [manuscript](www.somelink.com).
+After installing the dependencies (see below) the best way to test the code is to run the example provided [here](projects/example/process_data.ipynb).
+This is a minimal example of processing, going from raw reads to data analysis plots and shows how to use many of the functionalities provided.
+To process your own samples, copy the example folder, rename it and use it as a boilerplate to fill in your own sample list and change the processing notebook to perform the processing/plotting you want.
 
-[example](projects/example/process_data.ipynb)
-
-
-Only tested on Linux and MacOS.
+Only tested on Linux and MacOS, probably does not work on Windows.
 
 
 
 ### Input data
-This method takes in raw fastq paired-end reads.
-To save disc space bzip2 compression is used and thus an input requirement.
+The method takes in raw paired-end reads in fastq format.
+To save disc space bzip2 compression is used and thus is an input requirement.
 Commonly, fastq files are gzipped but this can be changed using `bzip2`.
 To queue files for parallel processing from gzipped to bzipped the following command can be used:  
 `ls *.gz | parallel "gunzip -c {} | bzip2 > {.}.bz2"`
@@ -28,7 +28,7 @@ The following needs to be installed and in the enviroment:
     * Only required to render and display pdf pages in the Jupyter notebook example
 
 
-The following Python packages and required and can be install with `pip` or `conda` commands:
+The following Python packages are required and can be install with `pip` or `conda` commands:
 * jupyterlab
 * pandas
 * Biopython
