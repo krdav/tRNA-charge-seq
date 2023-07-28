@@ -96,7 +96,16 @@ class TRNA_plot:
         # Add amino acid - codon string:
         self.all_stats['AA_codon'] = [AA + '-' + codon for codon, AA in zip(self.all_stats['codon'].values, self.all_stats['amino_acid'].values)]
         # tRNA annotation short form:
-        self.all_stats['tRNA_anno_short'] = ['-'.join(an.split('-')[1:]) for an in self.all_stats['tRNA_annotation'].values]
+        tshort_lst = list()
+        for an in self.all_stats['tRNA_annotation'].values:
+            an_short = list()
+            for an_p in an.split('@'):
+                if '_tRX' in an_p:
+                    an_short.append('-'.join(an_p.split('-')[1:]) + '-X')
+                else:
+                    an_short.append('-'.join(an_p.split('-')[1:]))
+            tshort_lst.append('@'.join(an_short))
+        self.all_stats['tRNA_anno_short'] = tshort_lst
 
         # Create single codon filter, to filter out sequences that map to
         # tRNA sequences with different codon/anticodon:
@@ -1053,7 +1062,8 @@ AAA2A = {
 'eColiThr': 'T',
 'iMet': 'M',
 'fMet': 'M',
-'Sup': 'X'
+'Sup': 'X',
+'Und': 'X'
 }
 
 
