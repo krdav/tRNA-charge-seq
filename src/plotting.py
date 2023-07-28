@@ -947,7 +947,8 @@ class TRNA_plot:
                     ((sample_stats['align_3p_nt'] == 'A') | (sample_stats['align_3p_nt'] == 'C')) & \
                     (sample_stats['single_codon']) & \
                     (~sample_stats['Ecoli_ctr']) & \
-                    (sample_stats['AA_letter'].apply(len) == 1)
+                    (sample_stats['AA_letter'].apply(len) == 1) & \
+                    (sample_stats['AA_letter'] != 'X')
         if row['compartment'] == 'mito':
             type_mask &= (sample_stats['mito_codon'])
         else:
