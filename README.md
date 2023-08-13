@@ -1,5 +1,5 @@
 # Charge tRNA-Seq
-This repository provides code and examples to process charge tRNA-Seq data as described in our [manuscript](www.somelink.com).
+This repository provides code and examples to process charge tRNA-Seq data as described in our [manuscript](https://www.biorxiv.org/content/10.1101/2023.07.31.551363v1).
 After installing the dependencies (see below) the best way to test the code is to run the example provided [here](projects/example/process_data.ipynb).
 This is a minimal example of processing, going from raw reads to data analysis plots and shows how to use many of the functionalities provided.
 To process your own samples, copy the example folder, rename it and use it as a boilerplate to fill in your own sample list and change the processing notebook to perform the processing/plotting you want.

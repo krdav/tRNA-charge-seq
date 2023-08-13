@@ -30,12 +30,13 @@ class SWIPE_align:
     overwrite_dir -- Overwrite old alignment folder if any exists (default False)
     SWIPE_threads -- Threads specified to SWIPE (default 4)
     from_UMIdir -- Is the input data from a folder made with the UMI_trim class? (default True)
+    check_input -- Check if input files exist (default True)
     verbose -- Verbose printing (default True)
     '''
     def __init__(self, dir_dict, tRNA_database, sample_df, score_mat, \
                  gap_penalty=6, extension_penalty=1, min_score_align=15, \
                  common_seqs=None, overwrite_dir=False, SWIPE_threads=4, \
-                 from_UMIdir=True, verbose=True):
+                 from_UMIdir=True, check_input=True, verbose=True):
         # Swipe command template:
         self.swipe_cmd_tmp = 'swipe\t--query\tINPUT_FILE\t--db\tDATABASE_FILE\t--out\tOUTPUT_FILE\t--symtype\t1\t--outfmt\t7\t--num_alignments\t3\t--num_descriptions\t3\t--evalue\t0.000000001\t--num_threads\tTHREADS\t--strand\t1\t--matrix\tSCORE_MATRIX\t-G\tGAP_PENALTY\t-E\tEXTENSION_PENALTY'
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('SCORE_MATRIX', score_mat)
@@ -60,21 +61,22 @@ class SWIPE_align:
         except:
             self.Nmatch_score = self.mismatch_score
         # Check files exists before starting:
-        if self.from_UMIdir:
-            self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
-            for _, row in self.sample_df.iterrows():
-                trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
-                assert(os.path.exists(trimmed_fn))
-        else:
-            # File paths are specified in sample_df
-            for _, row in self.sample_df.iterrows():
-                # Absolute path:
-                if row['path'][0] == '/':
-                    fpath = row['path']
-                # Relative path:
-                else:
-                    fpath = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], row['path'])
-                assert(os.path.exists(fpath))
+        if check_input:
+            if self.from_UMIdir:
+                self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
+                for _, row in self.sample_df.iterrows():
+                    trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
+                    assert(os.path.exists(trimmed_fn))
+            else:
+                # File paths are specified in sample_df
+                for _, row in self.sample_df.iterrows():
+                    # Absolute path:
+                    if row['path'][0] == '/':
+                        fpath = row['path']
+                    # Relative path:
+                    else:
+                        fpath = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], row['path'])
+                    assert(os.path.exists(fpath))
 
         # If using common sequences, check the input format and existence,
         # then read into dictionary:
