@@ -1,4 +1,8 @@
-import copy
+import copy, os, shutil, bz2, warnings, contextlib, json
+from subprocess import Popen, PIPE, STDOUT
+from mpire import WorkerPool
+from Bio import SeqIO
+import pandas as pd
 import numpy as np
 from numpy.random import Generator, PCG64, SFC64, Philox
 rng_pg = Generator(PCG64())
@@ -107,7 +111,8 @@ class TRNA_ReadSim:
                 # Find modification acceptors:
                 name_arr = np.array(list(unmod_pile.keys()))
                 hdist_arr = np.array([hm_dist(seq, unmod_pile[an]) for an in name_arr])
-                prob_arr = self.hamming2prob(hdist_arr, self.accp_max_dist, self.accp_min_dist, self.accp_dist_fun)
+                prob_arr = self.hamming2prob(hdist=hdist_arr, max_dist=self.accp_max_dist, \
+                                             min_dist=self.accp_min_dist, dist_fun=self.accp_dist_fun)
                 name_draw = rng_pg.binomial(1, prob_arr) > 0
                 # Move those selected to pile of modified sequences:
                 for acc_name in name_arr[name_draw]:
@@ -133,7 +138,8 @@ class TRNA_ReadSim:
             Nmods = int(round(rng_pg.uniform(Nmin, Nmax)))
         return(np.sort(rng_pg.choice(pos_arr, Nmods, replace=False)))
 
-    def hamming2prob(self, hdist, max_dist, min_dist, dist_fun, plot=False):
+    def hamming2prob(self, hdist=None, max_dist=None, min_dist=None, \
+                     dist_fun=None, plot=False):
         '''
         Convert hamming distance to probability of
         sharing modifications.
@@ -141,6 +147,18 @@ class TRNA_ReadSim:
         Keyword arguments:
         plot -- Only return plot of the resulting distance to probability conversion (default False)
         '''
+        if plot is False and any(None is el for el in [hdist, max_dist, min_dist, dist_fun]):
+            raise Exception('Must provide all arguments if not plotting: hdist, max_dist, min_dist, dist_fun')
+        elif plot:
+            pa_lst = list()
+            pa_dlst = [self.accp_max_dist, self.accp_min_dist, self.accp_dist_fun]
+            for pa_d, pa in zip(pa_dlst, [max_dist, min_dist, dist_fun]):
+                if pa is None:
+                    pa_lst.append(pa_d)
+                else:
+                    pa_lst.append(pa)
+            max_dist, min_dist, dist_fun = pa_lst
+
         if 'linear' in dist_fun:
             k = 1
         else:
@@ -154,7 +172,7 @@ class TRNA_ReadSim:
             plt.plot(hplot, p)
             plt.xlabel('Hamming distance')
             plt.ylabel('Probability')
-            return()
+            return
 
         if type(hdist) is int or type(hdist) is float:
             hdist = np.array([hdist])
@@ -310,8 +328,240 @@ class TRNA_ReadSim:
         
         # Return simulated reads with their reference annotations:
         if strip_gaps:
-            sim_reads = [''.join(read_mat[si]).strip('-') for si in range(mat_dim[0])]
+            reads = [''.join(read_mat[si]).strip('-') for si in range(mat_dim[0])]
         else:
             # Still strip 5p gaps but preserve internal gaps:
-            sim_reads = [''.join(read_mat[si]).lstrip('-') for si in range(mat_dim[0])]
-        return(read_anno, sim_reads)
+            reads = [''.join(read_mat[si]).lstrip('-') for si in range(mat_dim[0])]
+        return(read_anno, reads)
+
+    def adjust_ref_rdthr(self, rdthr_max=40, rdthr_min=30, N_btch=5, \
+                         btch_size=1e4, max_try=50, strip_gaps=False,
+                         kwargs={}):
+        '''
+        Re-sample reference set until
+        achieving the requested readthrough.
+        
+        Keyword arguments:
+        rdthr_max --  Maximum percentage readthrough in the N_btch samples (default 43)
+        rdthr_min --  Minimum percentage readthrough in the N_btch samples (default 37)
+        N_btch --  Number of read batches to sample to generate min/max readthrough (default 5)
+        btch_size -- Number of reads to simulate to generate min/max readthrough (default 1e4)
+        max_try --  Maximum number of iteration before giving up (default 50)
+        strip_gaps -- Strip gap characters '-' from output reads (default False)
+        '''
+
+        attempt = 0
+        while attempt <= max_try:
+            self.shuffle_reference()
+            cov_lst = list()
+            for _ in range(N_btch):
+                ann, reads = self.sim_reads(btch_size=btch_size, strip_gaps=strip_gaps, 
+                                            AA_charge=100, **kwargs)
+                cov = 100 * sum(len(sr) == self.ref_len for sr in reads)/len(reads)
+                cov_lst.append(cov)
+            if max(cov_lst) <= rdthr_max and min(cov_lst) >= rdthr_min:
+                print('Stopped with reference having {}/{} max/min coverage accross {} read batches.'.format(max(cov_lst), min(cov_lst), N_btch))
+                break
+            attempt += 1
+        if attempt > max_try:
+            print('Failed to adjust reference to requested readthrough')
+
+    def _handle_row(self, index, row):
+        '''Handle the read simulation for each sample row.'''
+
+        # Find the read simulation parameters set
+        # in the simulation sample sheet:
+        params = {kwargs: row[kwargs] for kwargs in self.sim_seq_kwargs if kwargs in row}
+        # Generate the simulated reads:
+        ann_lst, reads = self.sim_reads(**params)
+        # Generate UMIs:
+        Nseqs = len(reads)
+        umi_mat = np.empty((Nseqs, 10), dtype=np.dtype('U1'))
+        chN = np.array(list('ATGC'), dtype=np.dtype('U1'))
+        chPyr = np.array(list('TC'), dtype=np.dtype('U1'))
+        umi_mat[:, 0:9] = rng_pg.choice(chN, size=(Nseqs, 9))
+        umi_mat[:, 9:10] = rng_pg.choice(chPyr, size=(Nseqs, 1))
+        umi_lst = [''.join(ur) for ur in umi_mat]
+
+        # Write simulated reads in fastq format:
+        anno_json = dict()
+        fastq_fnam = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
+        with bz2.open(fastq_fnam, "wt") as fastq_fh:
+            idx = 0
+            for umi, ann, seq in zip(umi_lst, ann_lst, reads):
+                read_id = '{}_{}'.format(row['sample_name_unique'], idx)
+                anno_json[read_id] = ann
+                # Add barcode and UMI sequence to title:
+                title = '{} {}:{}'.format(read_id, row['barcode_seq'], umi)
+                # Add Phred score basically
+                # meanining no sequencing error:
+                qual = 'J' * len(seq)
+                # Write the simulated sequence in fastq format:
+                fastq_fh.write("@{}\n{}\n+\n{}\n".format(title, seq, qual))
+                idx += 1
+
+        # Write annotations for each simulated read:
+        anno_fnam = '{}/{}.json.bz2'.format(self.anno_dir_abs, row['sample_name_unique'])
+        with bz2.open(anno_fnam, "wt") as fh_out:
+            json.dump(anno_json, fh_out)
+        
+        # Return row with UMI stats:
+        row['N_after_downsample'] = Nseqs
+        row['N_UMI_observed'] = len(set(umi_lst))
+        UMI_bins = 4**9*2
+        row['N_UMI_expected'] = UMI_bins*(1-((UMI_bins-1) / UMI_bins)**Nseqs)
+        row['percent_UMI_obs-vs-exp'] = 100 * row['N_UMI_observed']/row['N_UMI_expected']
+        return(row)
+
+    def sim_from_sheet(self, sim_sheet_fnam, NBdir, n_jobs=4, \
+                       data_dir='sim_data', overwrite_dir=False):
+        '''
+        Simulate reads with difference parameters
+        using a simulation sample sheet.
+        
+        Keyword arguments:
+        n_jobs -- Number of multiprocessing jobs to use (default 4)
+        data_dir -- Name of folder to put simulated reads in. If not existing it will be created (default 'sim_data')
+        '''
+
+        # Keyword arguments for the read simulation parameters
+        # to search for in the simulation sample sheet:
+        self.sim_seq_kwargs = ['btch_size', 'bsln_mis', 'bsln_gap', \
+                               'bsln_stop', 'mod_pen_scl', 'mod_rdthr_scl', \
+                               'gap_add_lbd', 'gap_max', 'AA_charge', 'strip_gaps']
+
+        # Make folder structure:
+        self.dir_dict = {'NBdir': NBdir, 'data_dir': data_dir, 'UMI_dir': 'UMI_trimmed', 'anno_dir': 'read_anno'}
+        # Make data dir:
+        data_dir_abs = '{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'])
+        if not os.path.exists(data_dir_abs):
+            os.mkdir(data_dir_abs)
+
+        # Make UMI dir:
+        self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
+        try:
+            os.mkdir(self.UMI_dir_abs)
+        except:
+            if overwrite_dir:
+                shutil.rmtree(self.UMI_dir_abs)
+                os.mkdir(self.UMI_dir_abs)
+            else:
+                raise Exception('UMI_trimmed already exists under the folder {} and overwrite is set to False'.format(self.dir_dict['data_dir']))
+        
+        # Make simulation annotation dir:
+        self.anno_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['anno_dir'])
+        try:
+            os.mkdir(self.anno_dir_abs)
+        except:
+            if overwrite_dir:
+                shutil.rmtree(self.anno_dir_abs)
+                os.mkdir(self.anno_dir_abs)
+            else:
+                raise Exception('read_anno already exists under the folder {} and overwrite is set to False'.format(self.dir_dict['data_dir']))
+
+        # Generate simulated reads for each sample
+        # in the simulation sample sheet:
+        sim_df = pd.read_excel(sim_sheet_fnam)
+        data = list(sim_df.iterrows())
+        '''
+        Persistent strange behaviour when using parallel 
+        processing with random sampling. Maybe related
+        to this:
+        https://github.com/numpy/numpy/issues/9650
+
+        def initfn():
+            np.random.seed()
+        with WorkerPool(n_jobs=n_jobs) as pool:
+            results = pool.map(self._handle_row, data, worker_init=initfn)
+        '''
+        results = [self._handle_row(index, row) for index, row in sim_df.iterrows()]
+
+        # Make and write new sample sheet:
+        sample_df_fnam_abs = '{}/sample_list.xlsx'.format(self.dir_dict['NBdir'])
+        sample_df = pd.DataFrame(results)
+        sample_df = sample_df.drop(columns=self.sim_seq_kwargs, errors='ignore')
+        sample_df.to_excel(sample_df_fnam_abs)
+        sp_set = set(sample_df['species'])
+        assert(len(sp_set) == 1)
+        species = sp_set.pop()
+
+        # Dump new reference:
+        tRNA_db_sim = self.write_sim_tRNA_db(self.dir_dict, species)
+
+        return(self.dir_dict, sample_df, tRNA_db_sim)
+
+    def write_sim_tRNA_db(self, dir_dict, species, out_dir='tRNA_database_sim'):
+        '''
+        Write the tRNA database used for simulation with folder structure,
+        sequences and BLAST index such that it can be used
+        directly for an alignment run.
+        '''
+
+        # Make out_dir folder:
+        out_dir_abs = '{}/{}/{}'.format(dir_dict['NBdir'], dir_dict['data_dir'], out_dir)
+        try:
+            os.mkdir(out_dir_abs)
+        except:
+            shutil.rmtree(out_dir_abs)
+            os.mkdir(out_dir_abs)
+
+        tRNA_db_sim = dict()
+        # Make out_dir species folder:
+        out_dir_sp_abs = '{}/{}'.format(out_dir_abs, species)
+        try:
+            os.mkdir(out_dir_sp_abs)
+        except:
+            shutil.rmtree(out_dir_sp_abs)
+            os.mkdir(out_dir_sp_abs)
+        
+        # Write the masked sequences as fasta:
+        out_fnam = '{}-tRNAs.fa'.format(species)
+        out_fnam_abs = '{}/{}'.format(out_dir_sp_abs, out_fnam)
+        tRNA_db_sim[species] = out_fnam_abs
+        with open(out_fnam_abs, 'w') as fh:
+            for name in self.ref_dct.keys():
+                seq = ''.join(self.ref_dct[name]['seq'])
+                fh.write('>{}\n{}\n'.format(name, seq))
+
+        # Make BLAST DB on fasta:
+        self._makeblastdb(out_dir_sp_abs, out_fnam, self.dir_dict['NBdir'])
+
+        return(tRNA_db_sim)
+
+    def _makeblastdb(self, file_dir, fnam, NBdir):
+        '''
+        Build BLAST database (required for SWIPE).
+        Notice, it is built with sequence type = protein
+        This is to enable a custom scoring matrix for SWIPE.
+        '''
+        try:
+            os.chdir(file_dir)
+            cmd_str = 'makeblastdb -dbtype prot -in {} -blastdb_version 4'.format(fnam)
+            cmd = cmd_str.split()
+            log_fn = 'makeblastdb_logfile.txt'
+            with Popen(cmd, stdout=PIPE, stderr=STDOUT) as p, open(log_fn, 'a') as file:
+                file.write('Starting subprocess with command:')
+                file.write(str(cmd))
+                file.write('\n')
+                for line in p.stdout:
+                    file.write(line.decode('utf-8'))
+                file.write('\n****** DONE ******\n\n\n')
+            
+            os.chdir(NBdir)
+        except Exception as err:
+            os.chdir(NBdir)
+            raise err
+
+
+
+
+
+
+
+try:
+    import jellyfish
+    def hm_dist(s1, s2):
+        return(jellyfish.hamming_distance(s1, s2))
+except:
+    def hm_dist(s1, s2):
+        return(sum(c1!=c2 for c1, c2 in zip(s1, s2)))
