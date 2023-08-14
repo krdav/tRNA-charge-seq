@@ -60,10 +60,11 @@ class SWIPE_align:
             self.Nmatch_score = score_mat_dict['A']['N']
         except:
             self.Nmatch_score = self.mismatch_score
+        
+        self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
         # Check files exists before starting:
         if check_input:
             if self.from_UMIdir:
-                self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
                 for _, row in self.sample_df.iterrows():
                     trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
                     assert(os.path.exists(trimmed_fn))
