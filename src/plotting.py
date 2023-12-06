@@ -819,10 +819,11 @@ class TRNA_plot:
         with PdfPages(cov_fnam) as pp:
             # Loop through and generate plots for each sample:
             for res in results:
+                if res is False:
+                    continue
                 cov_count, cov_count_sum, aa_ordered_list, title_info = res
                 if verbose:
                     print('  {}'.format(title_info[0]), end='')
-
                 try: # Catch odd errors, like empty dataframe etc. 
                     title = 'Sample: {}, coverage from {} obs'\
                     .format(title_info[0], title_info[1])
@@ -965,6 +966,9 @@ class TRNA_plot:
         # from the queried tRNA to the longest in the set:
         max_len = cov_df['tRNA_annotation_len'].max()
         min_len = cov_df['tRNA_annotation_len'].min()
+        if cov_df.empty:
+            return(False)
+            #return([False, False, False, 'False'])
         len_map_len = dict() # prepare mapping for all tRNAs
         for len_i in range(min_len, max_len+1):
             len_map_len[len_i] = np.percentile(np.arange(max_len), np.linspace(0, 100, len_i), method='nearest')
