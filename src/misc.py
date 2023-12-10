@@ -106,12 +106,12 @@ def downsample_raw_input(sample_df, inp_file_df, NBdir, data_dir, seq_dir, \
         mate1_in = bz2.open(fnam_mate1_in, "rt")
         mate2_in = bz2.open(fnam_mate2_in, "rt")
 
-        fnam_mate1_DS = '.'.join(fnam_mate1.split('.')[0:-2]) + DS_ext + '.' + '.'.join(fnam_mate1.split('.')[-2:])
+        fnam_mate1_DS = '.'.join(fnam_mate1.split('/')[-1].split('.')[:-2]) + DS_ext + '.' + '.'.join(fnam_mate1.split('.')[-2:])
         fnam_mate1_lst.append(fnam_mate1_DS)
-        fnam_mate2_DS = '.'.join(fnam_mate2.split('.')[0:-2]) + DS_ext + '.' + '.'.join(fnam_mate2.split('.')[-2:])
+        fnam_mate2_DS = '.'.join(fnam_mate2.split('/')[-1].split('.')[:-2]) + DS_ext + '.' + '.'.join(fnam_mate2.split('.')[-2:])
         fnam_mate2_lst.append(fnam_mate2_DS)
-        fnam_mate1_out = '{}/{}/{}/{}'.format(NBdir, data_dir, DS_dir, fnam_mate1_DS)
-        fnam_mate2_out = '{}/{}/{}/{}'.format(NBdir, data_dir, DS_dir, fnam_mate2_DS)
+        fnam_mate1_out = '{}/{}'.format(DS_dir_abs, fnam_mate1_DS)
+        fnam_mate2_out = '{}/{}'.format(DS_dir_abs, fnam_mate2_DS)
         mate1_out = bz2.open(fnam_mate1_out, "wt")
         mate2_out = bz2.open(fnam_mate2_out, "wt")
 
