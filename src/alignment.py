@@ -38,11 +38,12 @@ class SWIPE_align:
                  common_seqs=None, overwrite_dir=False, SWIPE_threads=4, \
                  from_UMIdir=True, check_input=True, verbose=True):
         # Swipe command template:
-        self.swipe_cmd_tmp = 'swipe\t--query\tINPUT_FILE\t--db\tDATABASE_FILE\t--out\tOUTPUT_FILE\t--symtype\t1\t--outfmt\t7\t--num_alignments\t3\t--num_descriptions\t3\t--evalue\t0.000000001\t--num_threads\tTHREADS\t--strand\t1\t--matrix\tSCORE_MATRIX\t-G\tGAP_PENALTY\t-E\tEXTENSION_PENALTY'
+        self.swipe_cmd_tmp = 'swipe\t--query\tINPUT_FILE\t--db\tDATABASE_FILE\t--out\tOUTPUT_FILE\t--symtype\t1\t--outfmt\t7\t--num_alignments\t11\t--num_descriptions\t11\t--evalue\t0.000000001\t--num_threads\tTHREADS\t--strand\t1\t--matrix\tSCORE_MATRIX\t-G\tGAP_PENALTY\t-E\tEXTENSION_PENALTY\t--min_score\tMIN_SCORE'
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('SCORE_MATRIX', score_mat)
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('GAP_PENALTY', str(gap_penalty))
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('EXTENSION_PENALTY', str(extension_penalty))
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('THREADS', str(SWIPE_threads))
+        self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('MIN_SCORE', str(min_score_align))
         self.SWIPE_overwrite = True
         self.dry_run = False
         # Input:
@@ -60,10 +61,11 @@ class SWIPE_align:
             self.Nmatch_score = score_mat_dict['A']['N']
         except:
             self.Nmatch_score = self.mismatch_score
+        
+        self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
         # Check files exists before starting:
         if check_input:
             if self.from_UMIdir:
-                self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
                 for _, row in self.sample_df.iterrows():
                     trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
                     assert(os.path.exists(trimmed_fn))
@@ -409,8 +411,13 @@ class SWIPE_align:
                 max_match = len(query_hits['dseq']) - query_hits['Nins'] - numb_N
                 max_score = max_match * self.match_score + numb_N * self.Nmatch_score
                 query_hits['Fmax_score'] = query_hits['score'] / max_score
-
-                yield query, query_hits
+                if len(name_idx) > 10:
+                    query_hits = dict()
+                    query = ls_query[0]
+                    query_hits['aligned'] = False
+                    yield query, query_hits
+                else:
+                    yield query, query_hits
             elif flush:
                 ls_query = list(set(hit_dict['query']))
                 if len(ls_query) > 0:

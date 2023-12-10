@@ -1,9 +1,15 @@
 import os, shutil, bz2, random, copy
 import numpy as np
+import pandas as pd
 from Bio import SeqIO
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
 
 
+def read_sample_df(fnam):
+    sample_df = pd.read_excel(fnam)
+    sample_df['replicate'] = sample_df['replicate'].astype(int)
+    sample_df['hue_order'] = sample_df['hue_order'].astype(int)
+    return(sample_df)
 
 def sample_df_to_dict(sample_df):
     '''Reads sample_df into dict with sample_name_unique keys.'''

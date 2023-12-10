@@ -25,6 +25,13 @@ sandbox.ipynb
 /projects/**/data
 
 
+# Simulation stuff:
+utils/code-of-limited-use/sim_data/*
+/sim/**/data
+/sim/**/sim_data
+
+
+
 # In example folder only push the raw_fastq folder
 # and some plotting folder to the repo:
 /example/data/AdapterRemoval*
@@ -34,6 +41,7 @@ sandbox.ipynb
 /example/data/SWalign*
 /example/data/transcript_mutations/tRNA_database*
 /example/data/UMI_trimmed*
+
 
 
 # Data from collaborations
