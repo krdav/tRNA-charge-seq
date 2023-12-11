@@ -336,6 +336,7 @@ class TM_analysis:
                             # These are very rare events (probably less the 1/100,000),
                             # so we simply skip them:
                             continue
+
                         # Initiate the character observation matrix.
                         # Note that the number of observations is determined by the
                         # weight variable, hence the number could be less than 1:
@@ -392,36 +393,36 @@ class TM_analysis:
             # Pop from sample list to track that all
             # sample names have been found:
             sample_list_cp.pop(sample_list_cp.index(unam))
-            
-            # Combine mutation count matrices:
-            species = list(sp_muts.keys())[0]
-            for anno in sp_muts[species]:
-                # Skip if no observations:
-                if sp_muts[species][anno]['PSCM'].max().max() == 0:
-                    continue
-                # Fill the dictionary for all samples:
-                if tr_muts_combi[species][anno]['PSCM'].max().max() == 0:
-                    tr_muts_combi[species][anno]['PSCM'] = sp_muts[species][anno]['PSCM'].copy()
-                    tr_muts_combi[species][anno]['mut_freq'] = sp_muts[species][anno]['mut_freq']
-                    tr_muts_combi[species][anno]['gap_freq'] = sp_muts[species][anno]['gap_freq']
-                    tr_muts_combi[species][anno]['RTstops'] = sp_muts[species][anno]['RTstops']
-                else:
-                    tr_muts_combi[species][anno]['PSCM'] += sp_muts[species][anno]['PSCM'].copy()
-                    # Take the cumulative average for the frequencies:
-                    tr_muts_combi[species][anno]['mut_freq'] = (sp_muts[species][anno]['mut_freq'] + avg_count*tr_muts_combi[species][anno]['mut_freq']) / (avg_count+1)
-                    tr_muts_combi[species][anno]['gap_freq'] = (sp_muts[species][anno]['gap_freq'] + avg_count*tr_muts_combi[species][anno]['gap_freq']) / (avg_count+1)
-                    tr_muts_combi[species][anno]['RTstops'] = (sp_muts[species][anno]['RTstops'] + avg_count*tr_muts_combi[species][anno]['RTstops']) / (avg_count+1)
-            avg_count += 1
 
-            # Get the frequency average weighted by total observations:
-            if freq_avg_weighted:
+            # Combine mutation count matrices:
+            for species in sp_muts:
                 for anno in sp_muts[species]:
                     # Skip if no observations:
                     if sp_muts[species][anno]['PSCM'].max().max() == 0:
                         continue
-                    tr_muts_combi[species][anno]['mut_freq'] = self._calc_mut_freq(tr_muts_combi, anno, species, gap_only=False, min_count_show=0)
-                    tr_muts_combi[species][anno]['gap_freq'] = self._calc_mut_freq(tr_muts_combi, anno, species, gap_only=True, min_count_show=0)
-                    tr_muts_combi[species][anno]['RTstops'] = self._calc_RTstops(tr_muts_combi, anno, species)
+                    # Fill the dictionary for all samples:
+                    if tr_muts_combi[species][anno]['PSCM'].max().max() == 0:
+                        tr_muts_combi[species][anno]['PSCM'] = sp_muts[species][anno]['PSCM'].copy()
+                        tr_muts_combi[species][anno]['mut_freq'] = sp_muts[species][anno]['mut_freq']
+                        tr_muts_combi[species][anno]['gap_freq'] = sp_muts[species][anno]['gap_freq']
+                        tr_muts_combi[species][anno]['RTstops'] = sp_muts[species][anno]['RTstops']
+                    else:
+                        tr_muts_combi[species][anno]['PSCM'] += sp_muts[species][anno]['PSCM'].copy()
+                        # Take the cumulative average for the frequencies:
+                        tr_muts_combi[species][anno]['mut_freq'] = (sp_muts[species][anno]['mut_freq'] + avg_count*tr_muts_combi[species][anno]['mut_freq']) / (avg_count+1)
+                        tr_muts_combi[species][anno]['gap_freq'] = (sp_muts[species][anno]['gap_freq'] + avg_count*tr_muts_combi[species][anno]['gap_freq']) / (avg_count+1)
+                        tr_muts_combi[species][anno]['RTstops'] = (sp_muts[species][anno]['RTstops'] + avg_count*tr_muts_combi[species][anno]['RTstops']) / (avg_count+1)
+                avg_count += 1
+
+                # Get the frequency average weighted by total observations:
+                if freq_avg_weighted:
+                    for anno in sp_muts[species]:
+                        # Skip if no observations:
+                        if sp_muts[species][anno]['PSCM'].max().max() == 0:
+                            continue
+                        tr_muts_combi[species][anno]['mut_freq'] = self._calc_mut_freq(tr_muts_combi, anno, species, gap_only=False, min_count_show=0)
+                        tr_muts_combi[species][anno]['gap_freq'] = self._calc_mut_freq(tr_muts_combi, anno, species, gap_only=True, min_count_show=0)
+                        tr_muts_combi[species][anno]['RTstops'] = self._calc_RTstops(tr_muts_combi, anno, species)
 
         if len(sample_list_cp) > 0:
             print('Following samples could not be found and therefore not combined: {}'.format(str(sample_list_cp)))
