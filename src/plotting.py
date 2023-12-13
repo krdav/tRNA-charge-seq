@@ -313,7 +313,7 @@ class TRNA_plot:
 
     def plot_abundance(self, plot_type='aa', group=False, charge_plot=False, \
         plot_name='abundance_plot_aa', min_obs=100, sample_list=None, verbose=True, \
-        sample_list_exl=None, bc_list_exl=None):
+        sample_list_exl=None, bc_list_exl=None, tr_short=True):
 
         if plot_type == 'aa':
             charge_df_type = self.charge_filt['aa'].copy()
@@ -424,11 +424,14 @@ class TRNA_plot:
                         gs = fig.add_gridspec(1, 4)
                         ax1 = fig.add_subplot(gs[0, :])
                 elif plot_type == 'transcript':
-                    x_axis = 'tRNA_anno_short'
+                    if tr_short:
+                        x_axis = 'tRNA_anno_short'
+                    else:
+                        x_axis = 'tRNA_annotation'
                     mask_cyto = (~charge_sample['Ecoli_ctr']) & (~charge_sample['mito_codon'])
                     mask_mito = (~charge_sample['Ecoli_ctr']) & (charge_sample['mito_codon'])
-                    x_list_cyto = sorted(set(charge_sample['tRNA_anno_short'][mask_cyto].values), key=str.casefold)
-                    x_list_mito = sorted(set(charge_sample['tRNA_anno_short'][mask_mito].values), key=str.casefold)
+                    x_list_cyto = sorted(set(charge_sample[x_axis][mask_cyto].values), key=str.casefold)
+                    x_list_mito = sorted(set(charge_sample[x_axis][mask_mito].values), key=str.casefold)
                     colors_cyto = None
                     colors_mito = None
                     if sum(mask_mito) > 0:
