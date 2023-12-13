@@ -1048,6 +1048,7 @@ AAA2A = {
 'Gly':  'G',
 'His':  'H',
 'Ile':  'I',
+'Ile2':  'I',
 'Leu':  'L',
 'Leu1': 'L',
 'Leu2': 'L',
