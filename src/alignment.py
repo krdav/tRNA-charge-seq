@@ -154,15 +154,21 @@ class SWIPE_align:
             if not self.common_seqs_fnam is None:
                 data.append((0, 'common-seqs'))
                 self._prep_common()
-            with WorkerPool(n_jobs=n_jobs) as pool:
-                swipe_return = pool.map(self._start_SWIPE, data)
+            if n_jobs == 1:
+                swipe_return = [self._start_SWIPE(index, row) for index, row in self.sample_df.iterrows()]
+            else:
+                with WorkerPool(n_jobs=n_jobs) as pool:
+                    swipe_return = pool.map(self._start_SWIPE, data)
             if not self.common_seqs_fnam is None:
                 os.remove(self.common_seqs_fnam[:-4])
             # Collect results in parallel:
             if self.verbose:
                 print('\nCollecting alignment statistics, from sample:', end='')
-            with WorkerPool(n_jobs=n_jobs) as pool:
-                results = pool.map(self._collect_stats, data)
+            if n_jobs == 1:
+                results = [self._collect_stats(index, row) for index, row in self.sample_df.iterrows()]
+            else:
+                with WorkerPool(n_jobs=n_jobs) as pool:
+                    results = pool.map(self._collect_stats, data)
             self._write_stats(results)
             os.chdir(self.dir_dict['NBdir'])
             return(self.sample_df)
@@ -171,24 +177,33 @@ class SWIPE_align:
             raise err
     
     '''
-    Currently, I do not want to support serial run, instead use n_jobs=1.
-    Keeping this legacy code because it can be usefull for error handling.
+    # Currently, I do not want to support serial run, instead use n_jobs=1.
+    # Keeping this legacy code because it can be usefull for error handling.
 
-    def run_serial(self, dry_run=False, overwrite=True, verbose=True):
-        self.dry_run = dry_run
+    def run_serial(self, overwrite=True, verbose=True, \
+                   load_previous=False):
         self.SWIPE_overwrite = overwrite
         self.verbose = verbose
+        
+        if load_previous:
+            try:
+                self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.align_dir_abs), index_col=0)
+                print('Loaded results from previous run... Not running alignment.')
+                return(self.sample_df)
+            except Exception as err:
+                print('Attempted to read previous stats from sample_stats, but failed...')
+                raise err
+
         if self.verbose:
             print('Running Swipe on:', end='')
         os.chdir(self.align_dir_abs)
         try:
             swipe_return = [self._start_SWIPE(index, row) for index, row in self.sample_df.iterrows()]
             # Collect results:
-            if not dry_run:
-                if self.verbose:
-                    print('\nCollecting alignment statistics, from sample:', end='')
-                results = [self._collect_stats(index, row) for index, row in self.sample_df.iterrows()]
-                self._write_stats(results)
+            if self.verbose:
+                print('\nCollecting alignment statistics, from sample:', end='')
+            results = [self._collect_stats(index, row) for index, row in self.sample_df.iterrows()]
+            self._write_stats(results)
             os.chdir(self.dir_dict['NBdir'])
             return(self.sample_df)
         except Exception as err:
