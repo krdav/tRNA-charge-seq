@@ -123,7 +123,8 @@ class SWIPE_align:
                 print('Using existing folder because overwrite set to false: {}'.format(self.align_dir_abs))
 
     def run_parallel(self, n_jobs=4, overwrite=True, \
-                     verbose=True, load_previous=False):
+                     verbose=True, load_previous=False, \
+                     stream=True):
         '''
         Submit the input files for alignment.
 
@@ -132,9 +133,11 @@ class SWIPE_align:
         overwrite -- Overwrite files of previous run. If false, skipping mate pair files with merged files existing (default True)
         load_previous -- Attempt to load results from a previous alignment by looking up sample_stats.xlsx (default False)
         verbose -- Verbose printing alignment progress (default True)
+        stream -- Use streamable json (default True)
         '''
         self.SWIPE_overwrite = overwrite
         self.verbose = verbose
+        self.stream = stream
         if load_previous:
             try:
                 self.sample_df = pd.read_excel('{}/sample_stats.xlsx'.format(self.align_dir_abs), index_col=0)
@@ -155,7 +158,7 @@ class SWIPE_align:
                 data.append((0, 'common-seqs'))
                 self._prep_common()
             if n_jobs == 1:
-                swipe_return = [self._start_SWIPE(index, row) for index, row in self.sample_df.iterrows()]
+                swipe_return = [self._start_SWIPE(di[0], di[1]) for di in data]
             else:
                 with WorkerPool(n_jobs=n_jobs) as pool:
                     swipe_return = pool.map(self._start_SWIPE, data)
@@ -165,7 +168,7 @@ class SWIPE_align:
             if self.verbose:
                 print('\nCollecting alignment statistics, from sample:', end='')
             if n_jobs == 1:
-                results = [self._collect_stats(index, row) for index, row in self.sample_df.iterrows()]
+                results = [self._collect_stats(di[0], di[1]) for di in data]
             else:
                 with WorkerPool(n_jobs=n_jobs) as pool:
                     results = pool.map(self._collect_stats, data)
@@ -296,10 +299,10 @@ class SWIPE_align:
         # Reformat output so it can be read as XML:
         swipe_outfile_xml = self._prep_SWIPE_XML(swipe_outfile)
         # Read XML file as a streamable generator:
-        json_stream = self._parse_SWIPE_XML(swipe_outfile_xml, sp_tRNA_database)
+        aln_jstream = self._parse_SWIPE_XML(swipe_outfile_xml, sp_tRNA_database)
         # Dump query_hits as JSON:
         with bz2.open(SWres_fnam, 'wt', encoding="utf-8") as fh:
-            json.dump(json_stream, fh)
+            json.dump(aln_jstream, fh)
 
         # Remove tmp files:
         if type(row) != str:
@@ -450,7 +453,7 @@ class SWIPE_align:
                 high_score = -999
                 elem.clear() # this clears the element from memory
 
-    def _collect_stats(self,  index, row):
+    def _collect_stats(self, index, row):
         # Collect stats about the alignment #
         if type(row) == str:
             sample_name_unique = 'common-seqs'
@@ -467,42 +470,19 @@ class SWIPE_align:
             print('  {}'.format(sample_name_unique), end='')
 
         # Collect information:
-        query_nohits = set()
-        N_mapped = 0
-        N_mult_mapped = 0
-        N_mult_mapped_codon = 0
         # Read query_hits from JSON:
         SWres_fnam = '{}_SWalign.json.bz2'.format(sample_name_unique)
         with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
-            # Parse JSON data as a stream,
-            # i.e. as a transient dict-like object
-            SWres = json_stream.load(SWres_fh)
-            for readID, align_dict in SWres.persistent().items():
-                if not align_dict['aligned']:
-                    query_nohits.add(readID)
-                else:
-                    N_mapped += 1
-                    if '@' in align_dict['name']:
-                        N_mult_mapped += 1
-                    if not align_dict['one_codon']:
-                        N_mult_mapped_codon += 1
+            query_nohits, N_mapped, N_mult_mapped, \
+            N_mult_mapped_codon = self._count_json(SWres_fh, self.stream)
 
         # Collect information from common sequences:
         if type(row) != str and not self.common_seqs_fnam is None:
             # Read query_hits from JSON:
             SWres_fnam = '{}_SWalign.json.bz2'.format('common-seqs')
             with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
-                # Parse JSON data as a stream,
-                # i.e. as a transient dict-like object
-                SWres = json_stream.load(SWres_fh)
-                for readID, align_dict in SWres.persistent().items():
-                    if align_dict['aligned']:
-                        readID_int = int(readID)
-                        N_mapped += common_obs[readID_int]
-                        if '@' in align_dict['name']:
-                            N_mult_mapped += common_obs[readID_int]
-                        if not align_dict['one_codon']:
-                            N_mult_mapped_codon += 1
+                N_mapped, N_mult_mapped, \
+                N_mult_mapped_codon = self._count_common_json(SWres_fh, common_obs, self.stream)
 
         # Dump unaligned sequences:
         SWnohits_fnam = '{}_SWalign-nohits.fasta.bz2'.format(sample_name_unique)
@@ -551,6 +531,69 @@ class SWIPE_align:
             P_sa = 100 - P_ma
 
             return([sample_name_unique, N_mapped, P_sa, P_ma, P_mac, map_p])
+
+    def _count_json(self, SWres_fh, stream=True):
+        # Count alignment stats and find unaligned IDs:
+        query_nohits = set()
+        N_mapped = 0
+        N_mult_mapped = 0
+        N_mult_mapped_codon = 0
+        if stream:
+            # Parse JSON data as a stream,
+            # i.e. as a transient dict-like object
+            SWres = json_stream.load(SWres_fh)
+            for readID, align_dict in SWres.persistent().items():
+                if not align_dict['aligned']:
+                    query_nohits.add(readID)
+                else:
+                    N_mapped += 1
+                    if '@' in align_dict['name']:
+                        N_mult_mapped += 1
+                    if not align_dict['one_codon']:
+                        N_mult_mapped_codon += 1
+        else:
+            # Parse JSON:
+            SWres = json.load(SWres_fh)
+            for readID, align_dict in SWres.items():
+                if not align_dict['aligned']:
+                    query_nohits.add(readID)
+                else:
+                    N_mapped += 1
+                    if '@' in align_dict['name']:
+                        N_mult_mapped += 1
+                    if not align_dict['one_codon']:
+                        N_mult_mapped_codon += 1
+        return(query_nohits, N_mapped, N_mult_mapped, N_mult_mapped_codon)
+
+    def _count_common_json(self, SWres_fh, common_obs, stream=True):
+        # Count alignment stats from common sequences:
+        N_mapped = 0
+        N_mult_mapped = 0
+        N_mult_mapped_codon = 0
+        if stream:
+            # Parse JSON data as a stream,
+            # i.e. as a transient dict-like object
+            SWres = json_stream.load(SWres_fh)
+            for readID, align_dict in SWres.persistent().items():
+                if align_dict['aligned']:
+                    readID_int = int(readID)
+                    N_mapped += common_obs[readID_int]
+                    if '@' in align_dict['name']:
+                        N_mult_mapped += common_obs[readID_int]
+                    if not align_dict['one_codon']:
+                        N_mult_mapped_codon += 1
+        else:
+            # Parse JSON:
+            SWres = json.load(SWres_fh)
+            for readID, align_dict in SWres.items():
+                if align_dict['aligned']:
+                    readID_int = int(readID)
+                    N_mapped += common_obs[readID_int]
+                    if '@' in align_dict['name']:
+                        N_mult_mapped += common_obs[readID_int]
+                    if not align_dict['one_codon']:
+                        N_mult_mapped_codon += 1
+        return(N_mapped, N_mult_mapped, N_mult_mapped_codon)
 
     def _write_stats(self, results):
         # Remove the results entry from common seqeunces:
