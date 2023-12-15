@@ -102,7 +102,7 @@ class STATS_collection:
                 print('Using existing folder because overwrite set to false: {}'.format(self.stats_dir_abs))
 
     def run_parallel(self, n_jobs=4, verbose=True, \
-                     load_previous=False):
+                     load_previous=False, stream=True):
         '''
         Submit the input files for stats collection.
 
@@ -120,6 +120,7 @@ class STATS_collection:
             self._load_common_seqs(verbose)
 
         self.verbose = verbose
+        self.stream = stream
         if self.verbose:
             print('Collecting stats from:', end='')
         # Run parallel:
@@ -237,9 +238,13 @@ class STATS_collection:
         with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
             # Parse JSON data as a stream (saves memory),
             # i.e. as a transient dict-like object
-            SWres = json_stream.load(SWres_fh)
+            if self.stream:
+                SWres = json_stream.load(SWres_fh)
+                SWres_json = SWres.persistent()
+            else:
+                SWres_json = json.load(SWres_fh)
             # Loop through each read in the alignment results:
-            for SWreadID, align_dict in SWres.persistent().items():
+            for SWreadID, align_dict in SWres_json.items():
                 common_seq = False
                 # Skip reads that were not aligned:
                 if not align_dict['aligned']:
@@ -331,9 +336,13 @@ class STATS_collection:
         with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
             # Parse JSON data as a stream (saves memory),
             # i.e. as a transient dict-like object
-            SWres = json_stream.load(SWres_fh)
+            if self.stream:
+                SWres = json_stream.load(SWres_fh)
+                SWres_json = SWres.persistent()
+            else:
+                SWres_json = json.load(SWres_fh)
             # Loop through each read in the alignment results:
-            for readID, align_dict in SWres.persistent().items():
+            for readID, align_dict in SWres_json.items():
                 common_seq = True
                 readID_int = int(readID)
                 # Skip reads that were not aligned:
