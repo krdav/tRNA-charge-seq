@@ -1,4 +1,4 @@
-import copy, os, shutil, bz2, warnings, contextlib, json
+import copy, os, shutil, bz2, warnings, contextlib, json, random
 from subprocess import Popen, PIPE, STDOUT
 from mpire import WorkerPool
 from Bio import SeqIO
@@ -23,7 +23,7 @@ class TRNA_ReadSim:
     Keyword arguments:
     min_mods -- Minimum modified positions per tRNA (default 5)
     max_mods -- Maximum modified positions per tRNA (default 16)
-    dstr_mods -- Distribution to drawn the number of modifications from (default {'norm': {'mean': 10, 'std': 3}})
+    dstr_mods -- Distribution to draw the number of modifications from (default {'norm': {'mean': 10, 'std': 3}})
     accp_max_dist -- Maximum hamming distance for sharing modifications i.e. no sharing at this distance (default 10)
     accp_min_dist -- Minimum hamming distance for sharing modifications i.e. certain sharing at this distance (default 2)
     accp_dist_fun -- Function for conversion from hamming distance to probability of sharing modifications (default {'power': {'k': 0.3}})
@@ -328,7 +328,7 @@ class TRNA_ReadSim:
         
         # Return simulated reads with their reference annotations:
         if strip_gaps:
-            reads = [''.join(read_mat[si]).strip('-') for si in range(mat_dim[0])]
+            reads = [''.join(read_mat[si]).replace('-', '') for si in range(mat_dim[0])]
         else:
             # Still strip 5p gaps but preserve internal gaps:
             reads = [''.join(read_mat[si]).lstrip('-') for si in range(mat_dim[0])]
@@ -375,13 +375,21 @@ class TRNA_ReadSim:
         # Generate the simulated reads:
         ann_lst, reads = self.sim_reads(**params)
         # Generate UMIs:
-        Nseqs = len(reads)
-        umi_mat = np.empty((Nseqs, 10), dtype=np.dtype('U1'))
-        chN = np.array(list('ATGC'), dtype=np.dtype('U1'))
-        chPyr = np.array(list('TC'), dtype=np.dtype('U1'))
-        umi_mat[:, 0:9] = rng_pg.choice(chN, size=(Nseqs, 9))
-        umi_mat[:, 9:10] = rng_pg.choice(chPyr, size=(Nseqs, 1))
-        umi_lst = [''.join(ur) for ur in umi_mat]
+        if not self.UMI_ns:
+            Nseqs = len(reads)
+            umi_mat = np.empty((Nseqs, 10), dtype=np.dtype('U1'))
+            chN = np.array(list('ATGC'), dtype=np.dtype('U1'))
+            chPyr = np.array(list('TC'), dtype=np.dtype('U1'))
+            umi_mat[:, 0:9] = rng_pg.choice(chN, size=(Nseqs, 9))
+            umi_mat[:, 9:10] = rng_pg.choice(chPyr, size=(Nseqs, 1))
+            umi_lst = [''.join(ur) for ur in umi_mat]
+        else:
+            Nseqs = len(reads)
+            chN = np.array(list('ATGC'), dtype=np.dtype('U1'))
+            umi_mat1 = rng_pg.choice(chN, size=(Nseqs, 1))
+            umi_mat2 = rng_pg.choice(chN, size=(Nseqs, 2))
+            umi_mat3 = rng_pg.choice(chN, size=(Nseqs, 3))
+            umi_lst = [''.join(random.choice([u1, u2, u3])) for u1, u2, u3 in zip(umi_mat1, umi_mat2, umi_mat3)]
 
         # Write simulated reads in fastq format:
         anno_json = dict()
@@ -414,7 +422,8 @@ class TRNA_ReadSim:
         return(row)
 
     def sim_from_sheet(self, sim_sheet_fnam, NBdir, n_jobs=4, \
-                       data_dir='sim_data', overwrite_dir=False):
+                       data_dir='sim_data', overwrite_dir=False,
+                       UMI_ns=False):
         '''
         Simulate reads with difference parameters
         using a simulation sample sheet.
@@ -422,10 +431,12 @@ class TRNA_ReadSim:
         Keyword arguments:
         n_jobs -- Number of multiprocessing jobs to use (default 4)
         data_dir -- Name of folder to put simulated reads in. If not existing it will be created (default 'sim_data')
+        UMI_ns -- Lazy way of implementing a different UMI specification
         '''
 
         # Keyword arguments for the read simulation parameters
         # to search for in the simulation sample sheet:
+        self.UMI_ns = UMI_ns
         self.sim_seq_kwargs = ['btch_size', 'bsln_mis', 'bsln_gap', \
                                'bsln_stop', 'mod_pen_scl', 'mod_rdthr_scl', \
                                'gap_add_lbd', 'gap_max', 'AA_charge', 'strip_gaps']
@@ -477,10 +488,10 @@ class TRNA_ReadSim:
         results = [self._handle_row(index, row) for index, row in sim_df.iterrows()]
 
         # Make and write new sample sheet:
-        sample_df_fnam_abs = '{}/sample_list.xlsx'.format(self.dir_dict['NBdir'])
+        sample_df_fnam_abs = '{}/new_sample_list.xlsx'.format(self.dir_dict['NBdir'])
         sample_df = pd.DataFrame(results)
         sample_df = sample_df.drop(columns=self.sim_seq_kwargs, errors='ignore')
-        sample_df.to_excel(sample_df_fnam_abs)
+        sample_df.to_excel(sample_df_fnam_abs, index=False)
         sp_set = set(sample_df['species'])
         assert(len(sp_set) == 1)
         species = sp_set.pop()
