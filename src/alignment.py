@@ -261,7 +261,7 @@ class SWIPE_align:
         elif not self.common_seqs_fnam is None:
             # Count the number of times a common sequence is observed:
             common_obs = np.zeros(self.Ncommon)
-            # Count the number of UMIs observed for a commen sequence:
+            # Count the number of UMIs observed for a common sequence:
             UMI_obs_set = [set() for si in range(self.Ncommon)]
             with bz2.open(trimmed_fn, 'rt') as fh_in:
                 with open(trimmed_fasta_fn, 'wt') as fh_out:
@@ -532,67 +532,50 @@ class SWIPE_align:
 
             return([sample_name_unique, N_mapped, P_sa, P_ma, P_mac, map_p])
 
-    def _count_json(self, SWres_fh, stream=True):
+    def _count_json(self, SWres_fh, stream):
         # Count alignment stats and find unaligned IDs:
         query_nohits = set()
         N_mapped = 0
         N_mult_mapped = 0
         N_mult_mapped_codon = 0
+        # Parse JSON data as a stream,
+        # i.e. as a transient dict-like object
         if stream:
-            # Parse JSON data as a stream,
-            # i.e. as a transient dict-like object
             SWres = json_stream.load(SWres_fh)
-            for readID, align_dict in SWres.persistent().items():
-                if not align_dict['aligned']:
-                    query_nohits.add(readID)
-                else:
-                    N_mapped += 1
-                    if '@' in align_dict['name']:
-                        N_mult_mapped += 1
-                    if not align_dict['one_codon']:
-                        N_mult_mapped_codon += 1
+            SWres_json = SWres.persistent()
         else:
-            # Parse JSON:
-            SWres = json.load(SWres_fh)
-            for readID, align_dict in SWres.items():
-                if not align_dict['aligned']:
-                    query_nohits.add(readID)
-                else:
-                    N_mapped += 1
-                    if '@' in align_dict['name']:
-                        N_mult_mapped += 1
-                    if not align_dict['one_codon']:
-                        N_mult_mapped_codon += 1
+            SWres_json = json.load(SWres_fh)
+        for readID, align_dict in SWres_json.items():
+            if not align_dict['aligned']:
+                query_nohits.add(readID)
+            else:
+                N_mapped += 1
+                if '@' in align_dict['name']:
+                    N_mult_mapped += 1
+                if not align_dict['one_codon']:
+                    N_mult_mapped_codon += 1
         return(query_nohits, N_mapped, N_mult_mapped, N_mult_mapped_codon)
 
-    def _count_common_json(self, SWres_fh, common_obs, stream=True):
+    def _count_common_json(self, SWres_fh, common_obs, stream):
         # Count alignment stats from common sequences:
         N_mapped = 0
         N_mult_mapped = 0
         N_mult_mapped_codon = 0
+        # Parse JSON data as a stream,
+        # i.e. as a transient dict-like object
         if stream:
-            # Parse JSON data as a stream,
-            # i.e. as a transient dict-like object
             SWres = json_stream.load(SWres_fh)
-            for readID, align_dict in SWres.persistent().items():
-                if align_dict['aligned']:
-                    readID_int = int(readID)
-                    N_mapped += common_obs[readID_int]
-                    if '@' in align_dict['name']:
-                        N_mult_mapped += common_obs[readID_int]
-                    if not align_dict['one_codon']:
-                        N_mult_mapped_codon += 1
+            SWres_json = SWres.persistent()
         else:
-            # Parse JSON:
-            SWres = json.load(SWres_fh)
-            for readID, align_dict in SWres.items():
-                if align_dict['aligned']:
-                    readID_int = int(readID)
-                    N_mapped += common_obs[readID_int]
-                    if '@' in align_dict['name']:
-                        N_mult_mapped += common_obs[readID_int]
-                    if not align_dict['one_codon']:
-                        N_mult_mapped_codon += 1
+            SWres_json = json.load(SWres_fh)
+        for readID, align_dict in SWres_json.items():
+            if align_dict['aligned']:
+                readID_int = int(readID)
+                N_mapped += common_obs[readID_int]
+                if '@' in align_dict['name']:
+                    N_mult_mapped += common_obs[readID_int]
+                if not align_dict['one_codon']:
+                    N_mult_mapped_codon += 1
         return(N_mapped, N_mult_mapped, N_mult_mapped_codon)
 
     def _write_stats(self, results):
