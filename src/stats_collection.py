@@ -11,6 +11,8 @@ class STATS_collection:
     '''
     Class to collect statistics from the
     alignment results.
+    Currently, only collapsed UMI counts for
+    common sequences.
 
     Keyword arguments:
     common_seqs -- bzip2 compressed fasta file of commonly observed sequences to avoid duplicated alignments (default None)
@@ -169,9 +171,9 @@ class STATS_collection:
         with bz2.open(stats_fnam, 'wt') as stats_fh:
             # Print header to stats CSV file:
             print(','.join(self.stats_csv_header), file=stats_fh)
-            self._read_non_common(row, stats_fh)
+            self._read_non_common(row, stats_fh, self.stream)
             if not self.common_seqs_fnam is None:
-                self._read_common(row, stats_fh)
+                self._read_common(row, stats_fh, self.stream)
 
         # Filter data and aggregate to count charged/uncharged tRNAs
         # Read stats from stats CSV file:
@@ -201,7 +203,7 @@ class STATS_collection:
 
         return(stats_agg_fnam)
 
-    def _read_non_common(self, row, stats_fh):
+    def _read_non_common(self, row, stats_fh, stream):
         # Read fastq files must be read to
         # extract UMI and 5/3p non-template bases:
         # File from UMI dir or path specified in sample_df:
@@ -238,7 +240,7 @@ class STATS_collection:
         with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
             # Parse JSON data as a stream (saves memory),
             # i.e. as a transient dict-like object
-            if self.stream:
+            if stream:
                 SWres = json_stream.load(SWres_fh)
                 SWres_json = SWres.persistent()
             else:
@@ -323,7 +325,7 @@ class STATS_collection:
 
         reads_fh.close()
 
-    def _read_common(self, row, stats_fh):
+    def _read_common(self, row, stats_fh, stream):
         # Read common sequences observations for this sample:
         common_obs_fn = '{}/{}_common-seq-obs.json'.format(self.align_dir_abs, row['sample_name_unique'])
         with open(common_obs_fn, 'r') as fh_in:
@@ -336,7 +338,7 @@ class STATS_collection:
         with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
             # Parse JSON data as a stream (saves memory),
             # i.e. as a transient dict-like object
-            if self.stream:
+            if stream:
                 SWres = json_stream.load(SWres_fh)
                 SWres_json = SWres.persistent()
             else:
