@@ -609,7 +609,7 @@ class UMI_trim:
 
             # Find the max number of reads for downsampling:
             ds_abs_max = None
-            if self.downsample_percentile:
+            if not self.downsample_percentile is False:
                 stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_after_trim', \
                                                           'N_UMI_observed', 'N_UMI_expected', \
                                                           'N_after_downsample'])
@@ -765,7 +765,7 @@ class _5p_trim:
 
             # Find the max number of reads for downsampling:
             ds_abs_max = None
-            if self.downsample_percentile:
+            if not self.downsample_percentile is False:
                 stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_after_trim', \
                                                           'N_after_downsample'])
                 ds_abs_max = int(np.percentile(stats_df['N_after_trim'], self.downsample_percentile))
