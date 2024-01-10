@@ -21,6 +21,7 @@ The following needs to be installed and in the enviroment:
 * AdapterRemoval v2 ([link](https://adapterremoval.readthedocs.io))
     * AdapterRemoval v3 may be working but this has not been tested
 * SWIPE ([link](https://github.com/torognes/swipe))
+    * For Apple silicon use Rosetta2 to compile and run
 * makeblastdb
     * Only required if making a new tRNA database
     * Install the command line BLAST tools ([link](https://www.ncbi.nlm.nih.gov/books/NBK569861/#intro_Installation))
@@ -40,6 +41,7 @@ The following Python packages are required and can be install with `pip` or `con
 * mpire
 * jellyfish
 * json_stream
+    * Does not work for Apple silicon (unknown bug). Turn off using `stream=False` during alignment and stats collection
 * logomaker
 * wand
 * natsort
