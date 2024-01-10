@@ -44,8 +44,9 @@ The following Python packages are required and can be install with `pip` or `con
     * Does not work for Apple silicon (unknown bug). Turn off using `stream=False` during alignment and stats collection
 * logomaker
 * wand
-* natsort
     * Only required to render and display pdf pages in the Jupyter notebook example
+* natsort
+
 
 We recommend using an [Anaconda](https://www.anaconda.com/download) Python install which already has many of the above packages installed by default.
 
