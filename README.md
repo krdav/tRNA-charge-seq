@@ -42,6 +42,7 @@ The following Python packages are required and can be install with `pip` or `con
 * json_stream
 * logomaker
 * wand
+* natsort
     * Only required to render and display pdf pages in the Jupyter notebook example
 
 We recommend using an [Anaconda](https://www.anaconda.com/download) Python install which already has many of the above packages installed by default.
