@@ -36,6 +36,17 @@ cd ..
 ./tRNAdb_tool.py mm10/mm10-mitotRNAs.fa mm10/mm10-mature-tRNAs.fa > mouse/mm10-tRNAs.fa
 ```
 
+For yeast:
+```
+mkdir yeast
+mkdir Scere3
+cd Scere3
+wget https://raw.githubusercontent.com/krdav/mim-tRNAseq/master/mimseq/data/sacCer3-eColitK/sacCer3-mitotRNAs.fa
+wget http://gtrnadb.ucsc.edu/genomes/eukaryota/Scere3/sacCer3-mature-tRNAs.fa
+cd ..
+./tRNAdb_tool.py Scere3/sacCer3-mitotRNAs.fa Scere3/sacCer3-mature-tRNAs.fa > yeast/Scere3-tRNAs.fa
+```
+
 For Ecoli (gtrnadb puts CCA at the end of the mature Ecoli tRNAs but not the mature human tRNAs...):
 ```
 mkdir ecoli

@@ -1,0 +1,18 @@
+{
+  "version": "1.2",
+  "dbname": "Scere3-tRNAs.fa",
+  "dbtype": "Protein",
+  "db-version": 4,
+  "description": "Scere3-tRNAs.fa",
+  "number-of-letters": 6079,
+  "number-of-sequences": 79,
+  "last-updated": "2024-02-23T16:47:00",
+  "number-of-volumes": 1,
+  "bytes-total": 15151,
+  "bytes-to-cache": 6871,
+  "files": [
+    "Scere3-tRNAs.fa.phr",
+    "Scere3-tRNAs.fa.pin",
+    "Scere3-tRNAs.fa.psq"
+  ]
+}
