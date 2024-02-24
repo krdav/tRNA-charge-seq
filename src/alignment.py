@@ -61,8 +61,9 @@ class SWIPE_align:
             self.Nmatch_score = score_mat_dict['A']['N']
         except:
             self.Nmatch_score = self.mismatch_score
-        
-        self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
+
+        if self.from_UMIdir:
+            self.UMI_dir_abs = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['UMI_dir'])
         # Check files exists before starting:
         if check_input:
             if self.from_UMIdir:
@@ -77,7 +78,8 @@ class SWIPE_align:
                         fpath = row['path']
                     # Relative path:
                     else:
-                        fpath = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], row['path'])
+                        fpath = '{}/{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['seq_dir'], row['path'])
+                    print(fpath)
                     assert(os.path.exists(fpath))
 
         # If using common sequences, check the input format and existence,
@@ -233,14 +235,14 @@ class SWIPE_align:
             # File from UMI dir or path specified in sample_df:
             if self.from_UMIdir:
                 trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, sample_name_unique)
+                trimmed_fasta_fn = trimmed_fn[:-10] + '.fasta'
             else:
                 # Absolute path:
                 if row['path'][0] == '/':
-                    trimmed_fn = row['path']
+                    trimmed_fasta_fn = row['path']
                 # Relative path:
                 else:
-                    trimmed_fn = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], row['path'])
-            trimmed_fasta_fn = trimmed_fn[:-10] + '.fasta'
+                    trimmed_fasta_fn = '{}/{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['seq_dir'], row['path'])
             swipe_cmd, swipe_outfile = self._make_SWIPE_cmd(sp_tRNA_database, trimmed_fasta_fn, sample_name_unique)
         if self.dry_run:
             print('Swipe cmd: {}'.format(' '.join(swipe_cmd)))
@@ -256,7 +258,7 @@ class SWIPE_align:
             return(1)
 
         # Prepare sequences for SWIPE:
-        if type(row) == str:
+        if type(row) == str or not self.from_UMIdir:
             pass # common sequences have already been prepared
         elif not self.common_seqs_fnam is None:
             # Count the number of times a common sequence is observed:
@@ -305,7 +307,7 @@ class SWIPE_align:
             json.dump(aln_jstream, fh)
 
         # Remove tmp files:
-        if type(row) != str:
+        if type(row) != str and self.from_UMIdir:
             os.remove(trimmed_fasta_fn)
         os.remove(swipe_outfile)
         os.remove(swipe_outfile_xml)
@@ -495,17 +497,23 @@ class SWIPE_align:
                         if seq_id in query_nohits:
                             fh_out.write(">{}\n{}\n".format(record.id, str(record.seq)))
             return(False)
-        else:
-            # File from UMI dir or path specified in sample_df:
-            if self.from_UMIdir:
-                trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, sample_name_unique)
+        elif not self.from_UMIdir:
+            # Absolute path:
+            if row['path'][0] == '/':
+                trimmed_fn = row['path']
+            # Relative path:
             else:
-                # Absolute path:
-                if row['path'][0] == '/':
-                    trimmed_fn = row['path']
-                # Relative path:
-                else:
-                    trimmed_fn = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], row['path'])
+                trimmed_fn = '{}/{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['seq_dir'], row['path'])
+            print(trimmed_fn)
+            with bz2.open(SWnohits_fnam, 'wt', encoding="utf-8") as fh_out:
+                with open(trimmed_fn, 'r') as fh_in:
+                    for record in SeqIO.parse(fh_in, "fasta"):
+                        Ninput += 1
+                        seq_id = record.id
+                        if seq_id in query_nohits:
+                            fh_out.write(">{}\n{}\n".format(record.id, str(record.seq)))
+        else:
+            trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, sample_name_unique)
             with bz2.open(SWnohits_fnam, 'wt', encoding="utf-8") as fh_out:
                 with bz2.open(trimmed_fn, 'rt') as fh_in:
                     for title, seq, qual in FastqGeneralIterator(fh_in):
@@ -514,23 +522,23 @@ class SWIPE_align:
                         if seq_id in query_nohits:
                             fh_out.write(">{}\n{}\n".format(title, seq))
 
-            # Calculate stats:
-            if not self.from_UMIdir:
-                map_p = N_mapped / Ninput * 100
-            elif row['N_after_downsample'] == 0:
-                map_p = 0
-            else:
-                map_p = N_mapped / row['N_after_downsample'] * 100
-            # Multiple mappings have fasta IDs merged with "@":
-            if N_mapped == 0:
-                P_ma = 0
-                P_mac = 0
-            else:
-                P_ma = N_mult_mapped / N_mapped * 100
-                P_mac = N_mult_mapped_codon / N_mapped * 100
-            P_sa = 100 - P_ma
+        # Calculate stats:
+        if not self.from_UMIdir:
+            map_p = N_mapped / Ninput * 100
+        elif row['N_after_downsample'] == 0:
+            map_p = 0
+        else:
+            map_p = N_mapped / row['N_after_downsample'] * 100
+        # Multiple mappings have fasta IDs merged with "@":
+        if N_mapped == 0:
+            P_ma = 0
+            P_mac = 0
+        else:
+            P_ma = N_mult_mapped / N_mapped * 100
+            P_mac = N_mult_mapped_codon / N_mapped * 100
+        P_sa = 100 - P_ma
 
-            return([sample_name_unique, N_mapped, P_sa, P_ma, P_mac, map_p])
+        return([sample_name_unique, N_mapped, P_sa, P_ma, P_mac, map_p])
 
     def _count_json(self, SWres_fh, stream):
         # Count alignment stats and find unaligned IDs:
@@ -579,6 +587,7 @@ class SWIPE_align:
         return(N_mapped, N_mult_mapped, N_mult_mapped_codon)
 
     def _write_stats(self, results):
+        print(results)
         # Remove the results entry from common seqeunces:
         results = [res for res in results if not res is False]
         stats_df = pd.DataFrame(results, columns=['sample_name_unique', 'N_mapped', 'percent_single_annotation', 'percent_multiple_annotation', 'percent_multiple_codons', 'Mapping_percent'])

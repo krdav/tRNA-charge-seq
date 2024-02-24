@@ -77,7 +77,7 @@ class STATS_collection:
                             fpath = row['path']
                         # Relative path:
                         else:
-                            fpath = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], row['path'])
+                            fpath = '{}/{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['seq_dir'], row['path'])
                     assert(os.path.exists(fpath))
                 common_obs_fn = '{}/{}_common-seq-obs.json'.format(self.align_dir_abs, row['sample_name_unique'])
                 if not self.common_seqs_fnam is None:
@@ -209,31 +209,38 @@ class STATS_collection:
         # File from UMI dir or path specified in sample_df:
         if self.from_UMIdir:
             trimmed_fn = '{}/{}_UMI-trimmed.fastq.bz2'.format(self.UMI_dir_abs, row['sample_name_unique'])
+            if self.reads_SW_sorted:
+                reads_fh = bz2.open(trimmed_fn, 'rt')
+                read_info_iter = SeqIO.parse(reads_fh, "fastq")
+                readID = ''
+            # If reads and SW results are not sorted the same way,
+            # the read information must be read into memory:
+            else:
+                read_info = dict()
+                with bz2.open(trimmed_fn, 'rt') as fh_bz:
+                    for read in SeqIO.parse(fh_bz, "fastq"):
+                        # The last two strings are the adapter sequence and the UMI:
+                        try:
+                            _3p_bc, _5p_umi = read.description.split()[-1].split(':')[-2:]
+                        except:
+                            _3p_bc, _5p_umi = '', ''
+                        seq = str(read.seq)
+                        readID = str(read.id)
+                        read_info[readID] = (_5p_umi, seq)
+
         else:
             # Absolute path:
             if row['path'][0] == '/':
                 trimmed_fn = row['path']
             # Relative path:
             else:
-                trimmed_fn = '{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], row['path'])
-        if self.reads_SW_sorted:
-            reads_fh = bz2.open(trimmed_fn, 'rt')
-            read_info_iter = SeqIO.parse(reads_fh, "fastq")
-            readID = ''
-        # If reads and SW results are not sorted the same way,
-        # the read information must be read into memory:
-        else:
-            read_info = dict()
-            with bz2.open(trimmed_fn, 'rt') as fh_bz:
-                for read in SeqIO.parse(fh_bz, "fastq"):
-                    # The last two strings are the adapter sequence and the UMI:
-                    try:
-                        _3p_bc, _5p_umi = read.description.split()[-1].split(':')[-2:]
-                    except:
-                        _3p_bc, _5p_umi = '', ''
-                    seq = str(read.seq)
-                    readID = str(read.id)
-                    read_info[readID] = (_5p_umi, seq)
+                trimmed_fn = '{}/{}/{}/{}'.format(self.dir_dict['NBdir'], self.dir_dict['data_dir'], self.dir_dict['seq_dir'], row['path'])
+            if self.reads_SW_sorted:
+                reads_fh = open(trimmed_fn, 'rt')
+                read_info_iter = SeqIO.parse(reads_fh, "fasta")
+                readID = ''
+            else:
+                raise Exception('Using unsorted read/annotations not implemented for sequence input not from UMI dir.')
 
         # Open the alignment results:
         SWres_fnam = '{}/{}_SWalign.json.bz2'.format(self.align_dir_abs, row['sample_name_unique'])
