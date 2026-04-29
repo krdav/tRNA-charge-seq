@@ -483,8 +483,10 @@ class SWIPE_align:
             # Read query_hits from JSON:
             SWres_fnam = '{}_SWalign.json.bz2'.format('common-seqs')
             with bz2.open(SWres_fnam, 'rt', encoding="utf-8") as SWres_fh:
-                N_mapped, N_mult_mapped, \
-                N_mult_mapped_codon = self._count_common_json(SWres_fh, common_obs, self.stream)
+                N_mapped_comm, N_mult_mapped_comm, N_mult_mapped_codon_comm = self._count_common_json(SWres_fh, common_obs, self.stream)
+                N_mapped += N_mapped_comm
+                N_mult_mapped += N_mult_mapped_comm
+                N_mult_mapped_codon += N_mult_mapped_codon_comm
 
         # Dump unaligned sequences:
         SWnohits_fnam = '{}_SWalign-nohits.fasta.bz2'.format(sample_name_unique)
