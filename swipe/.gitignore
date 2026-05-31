@@ -1,0 +1,16 @@
+# Build artifacts
+*.o
+swipe
+mpiswipe
+gmon.out
+swipe_out.txt
+
+# Editor / OS cruft
+.DS_Store
+.idea/
+*~
+
+# Local data / scratch (not part of the source)
+tRNA_database/
+utils/
+todo.txt
