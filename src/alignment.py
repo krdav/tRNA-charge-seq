@@ -1,4 +1,4 @@
-import os, shutil, bz2, json
+import os, shutil, bz2, json, warnings
 from subprocess import Popen, PIPE, STDOUT
 import xml.etree.cElementTree as ET
 from Bio import SeqIO
@@ -28,17 +28,63 @@ class SWIPE_align:
     min_score_align -- Minimum alignment score to accept an alignment (default 15)
     common_seqs -- bzip2 compressed fasta file of commonly observed sequences to avoid duplicated alignments (default None)
     overwrite_dir -- Overwrite old alignment folder if any exists (default False)
-    SWIPE_threads -- Threads specified to SWIPE (default 4)
+    SWIPE_threads -- DEPRECATED and ignored. SWIPE now always runs with a
+        single thread, because this workload (many short queries against a small
+        database) is faster that way; parallelise across samples with the n_jobs
+        argument of run_parallel instead. Passing this argument emits a warning.
+    swipe_compact -- Use the krdav/swipe fork's fast --best_only/--outfmt 10
+        path. 'auto' detects support and falls back to XML (--outfmt 7) for an
+        upstream SWIPE; True forces it (fork required); False forces XML
+        (default 'auto')
     from_UMIdir -- Is the input data from a folder made with the UMI_trim class? (default True)
     check_input -- Check if input files exist (default True)
     verbose -- Verbose printing (default True)
     '''
     def __init__(self, dir_dict, tRNA_database, sample_df, score_mat, \
                  gap_penalty=6, extension_penalty=1, min_score_align=15, \
-                 common_seqs=None, overwrite_dir=False, SWIPE_threads=4, \
+                 common_seqs=None, overwrite_dir=False, SWIPE_threads=None, \
+                 swipe_compact='auto', \
                  from_UMIdir=True, check_input=True, verbose=True):
-        # Swipe command template:
-        self.swipe_cmd_tmp = 'swipe\t--query\tINPUT_FILE\t--db\tDATABASE_FILE\t--out\tOUTPUT_FILE\t--symtype\t1\t--outfmt\t7\t--num_alignments\t11\t--num_descriptions\t11\t--evalue\t0.000000001\t--num_threads\tTHREADS\t--strand\t1\t--matrix\tSCORE_MATRIX\t-G\tGAP_PENALTY\t-E\tEXTENSION_PENALTY\t--min_score\tMIN_SCORE'
+        # SWIPE_threads is deprecated and ignored: SWIPE always runs with a
+        # single thread (faster for this workload; parallelise across samples
+        # via run_parallel's n_jobs instead). Kept for backwards compatibility.
+        if SWIPE_threads is not None:
+            warnings.warn(
+                'SWIPE_threads is deprecated and ignored; SWIPE now always runs '
+                'with a single thread. Parallelise across samples with the '
+                'n_jobs argument of run_parallel instead.',
+                DeprecationWarning, stacklevel=2)
+        SWIPE_threads = 1
+
+        # Swipe command template.
+        #
+        # The krdav/swipe fork (https://github.com/krdav/swipe) adds two options
+        # used by default here: --best_only reports only the best-scoring hit(s)
+        # per read (skipping wasted tracebacks/output for lower-scoring hits),
+        # and --outfmt 10 is a compact, tab-separated output read directly
+        # without an XML reformatting round-trip. These are faster but produce
+        # results identical to upstream.
+        #
+        # For backwards compatibility with an upstream SWIPE that lacks these
+        # options, we fall back to --outfmt 7 (XML). swipe_compact controls this:
+        #   'auto'  -- detect support by probing `swipe --help` (default)
+        #   True    -- force the compact/--best_only path (fork required)
+        #   False   -- force the XML path (works with any SWIPE)
+        # num_alignments/num_descriptions stay at 11 so reads with >10
+        # equally-best hits can still be flagged as multi-mapping.
+        if swipe_compact == 'auto':
+            self.use_compact = self._swipe_supports_best_only()
+        else:
+            self.use_compact = bool(swipe_compact)
+        if verbose:
+            print('SWIPE output mode: {}'.format(
+                'compact (--best_only --outfmt 10)' if self.use_compact
+                else 'XML (--outfmt 7)'))
+        if self.use_compact:
+            outfmt_opt = '--outfmt\t10\t--best_only'
+        else:
+            outfmt_opt = '--outfmt\t7'
+        self.swipe_cmd_tmp = 'swipe\t--query\tINPUT_FILE\t--db\tDATABASE_FILE\t--out\tOUTPUT_FILE\t--symtype\t1\t' + outfmt_opt + '\t--num_alignments\t11\t--num_descriptions\t11\t--evalue\t0.000000001\t--num_threads\tTHREADS\t--strand\t1\t--matrix\tSCORE_MATRIX\t-G\tGAP_PENALTY\t-E\tEXTENSION_PENALTY\t--min_score\tMIN_SCORE'
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('SCORE_MATRIX', score_mat)
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('GAP_PENALTY', str(gap_penalty))
         self.swipe_cmd_tmp = self.swipe_cmd_tmp.replace('EXTENSION_PENALTY', str(extension_penalty))
@@ -298,10 +344,15 @@ class SWIPE_align:
                 file.write(line.decode('utf-8'))
             file.write('\n****** DONE ******\n\n\n')
 
-        # Reformat output so it can be read as XML:
-        swipe_outfile_xml = self._prep_SWIPE_XML(swipe_outfile)
-        # Read XML file as a streamable generator:
-        aln_jstream = self._parse_SWIPE_XML(swipe_outfile_xml, sp_tRNA_database)
+        # Parse the alignment output as a streamable generator. The compact
+        # (outfmt 10) output is read directly; the XML (outfmt 7) output first
+        # needs reformatting into valid XML.
+        if self.use_compact:
+            aln_jstream = self._parse_SWIPE_compact(swipe_outfile, sp_tRNA_database)
+            swipe_outfile_xml = None
+        else:
+            swipe_outfile_xml = self._prep_SWIPE_XML(swipe_outfile)
+            aln_jstream = self._parse_SWIPE_XML(swipe_outfile_xml, sp_tRNA_database)
         # Dump query_hits as JSON:
         with bz2.open(SWres_fnam, 'wt', encoding="utf-8") as fh:
             json.dump(aln_jstream, fh)
@@ -310,9 +361,20 @@ class SWIPE_align:
         if type(row) != str and self.from_UMIdir:
             os.remove(trimmed_fasta_fn)
         os.remove(swipe_outfile)
-        os.remove(swipe_outfile_xml)
+        if swipe_outfile_xml is not None:
+            os.remove(swipe_outfile_xml)
         return(1)
     
+    def _swipe_supports_best_only(self):
+        # Probe whether the installed SWIPE understands the krdav/swipe fork's
+        # --best_only option (the fork that also provides --outfmt 10). Returns
+        # False if SWIPE is missing or is upstream, so we fall back to XML.
+        try:
+            with Popen(['swipe', '--help'], stdout=PIPE, stderr=STDOUT) as p:
+                help_text = p.stdout.read().decode('utf-8', errors='replace')
+            return('--best_only' in help_text)
+        except Exception:
+            return(False)
     def _make_SWIPE_cmd(self, sp_tRNA_database, trimmed_fn, sample_name_unique):
         swipe_cmd = self.swipe_cmd_tmp
         swipe_cmd = swipe_cmd.replace('DATABASE_FILE', sp_tRNA_database)
@@ -322,6 +384,87 @@ class SWIPE_align:
         swipe_cmd = swipe_cmd.split('\t')
         return(swipe_cmd, swipe_outfile)
     
+    # Use decorator to define this as a streamable dict
+    # to avoid loading all into memory when writing to JSON.
+    # See: https://pypi.org/project/json-stream/
+    @streamable_dict
+    def _parse_SWIPE_compact(self, swipe_outfile, sp_tRNA_database):
+        # SWIPE's compact output (outfmt 10) has one tab-separated line per
+        # reported hit:
+        #   query <TAB> score <TAB> name <TAB> qstart,qend <TAB> dstart,dend
+        #         <TAB> qseq <TAB> aseq <TAB> dseq
+        # All lines for a query are contiguous and, with --best_only, share the
+        # best score. Queries with no hit produce no lines.
+
+        # Read the database IDs and use them to verify alignment results:
+        db_id_set = set()
+        for record in SeqIO.parse(sp_tRNA_database, "fasta"):
+            db_id_set.add(record.id)
+
+        def make_query_hits(score, names_raw, qpos_l, dpos_l, qseq_l, aseq_l, dseq_l):
+            # The "name" field carries the full SWIPE header; the database ID
+            # is its last whitespace-separated token:
+            names = [n.split(' ')[-1] for n in names_raw]
+            for n in names: # quick assertion that name is in database
+                assert(n in db_id_set)
+            # More than 10 equally-best hits: flag as (multi-mapped) unaligned:
+            if len(names) > 10:
+                return {'aligned': False}
+            query_hits = dict()
+            # Sort hits by name (if multiple) and report the first:
+            name_idx = sorted(range(len(names)), key=lambda k: names[k])
+            query_hits['score'] = score
+            query_hits['name'] = '@'.join([names[didx] for didx in name_idx])
+            # If multiple annotations, are they all the same codon?:
+            Ncodons = len(set([n.split('-')[2] for n in names]))
+            Ncompartments = len(set(['mito' in n for n in names]))
+            query_hits['one_codon'] = (Ncodons == 1 and Ncompartments == 1)
+            # Convert qpos/dpos (query/database alignment position) to int tuple:
+            qpos = [tuple(map(int, qp.split(','))) for qp in qpos_l]
+            dpos = [tuple(map(int, dp.split(','))) for dp in dpos_l]
+            # Add qpos/dpos and alignment strings, but only for the first hit:
+            query_hits['qpos'] = qpos[name_idx[0]]
+            query_hits['dpos'] = dpos[name_idx[0]]
+            query_hits['qseq'] = qseq_l[name_idx[0]]
+            query_hits['aseq'] = aseq_l[name_idx[0]]
+            query_hits['dseq'] = dseq_l[name_idx[0]]
+            query_hits['aligned'] = True
+            # Count the number of deletions and insertions:
+            query_hits['Ndel'] = query_hits['qseq'].count('-')
+            query_hits['Nins'] = query_hits['dseq'].count('-')
+            # Fraction of max alignment score:
+            numb_N = query_hits['dseq'].count('N')
+            max_match = len(query_hits['dseq']) - query_hits['Nins'] - numb_N
+            max_score = max_match * self.match_score + numb_N * self.Nmatch_score
+            query_hits['Fmax_score'] = query_hits['score'] / max_score
+            return query_hits
+
+        query = None
+        score = None
+        names_raw, qpos_l, dpos_l = [], [], []
+        qseq_l, aseq_l, dseq_l = [], [], []
+        with open(swipe_outfile, 'r') as fh:
+            for line in fh:
+                # Split on tab only: the alignment string (aseq) contains spaces.
+                cols = line.rstrip('\n').split('\t')
+                if cols[0] != query:
+                    # New query encountered; flush the previous one:
+                    if query is not None and len(names_raw) > 0 and score >= self.min_score_align:
+                        yield query, make_query_hits(score, names_raw, qpos_l, dpos_l, qseq_l, aseq_l, dseq_l)
+                    query = cols[0]
+                    score = int(cols[1])
+                    names_raw, qpos_l, dpos_l = [], [], []
+                    qseq_l, aseq_l, dseq_l = [], [], []
+                names_raw.append(cols[2])
+                qpos_l.append(cols[3])
+                dpos_l.append(cols[4])
+                qseq_l.append(cols[5])
+                aseq_l.append(cols[6])
+                dseq_l.append(cols[7])
+            # Flush the final query:
+            if query is not None and len(names_raw) > 0 and score >= self.min_score_align:
+                yield query, make_query_hits(score, names_raw, qpos_l, dpos_l, qseq_l, aseq_l, dseq_l)
+
     def _prep_SWIPE_XML(self, swipe_outfile):
         # Add "data" as root for the xml file:
         swipe_outfile_xml = swipe_outfile + '.xml'
@@ -348,7 +491,7 @@ class SWIPE_align:
         db_id_set = set()
         for record in SeqIO.parse(sp_tRNA_database, "fasta"):
             db_id_set.add(record.id)
-        
+
         # Parse XML:
         hit_dict = {tag: [] for tag in ['score', 'query', 'name', 'qpos', 'dpos', 'qseq', 'aseq', 'dseq']}
         pickup = True # When True, pick up hit data and store in tmp dict ("hit_dict")
@@ -454,7 +597,6 @@ class SWIPE_align:
                 pickup = True
                 high_score = -999
                 elem.clear() # this clears the element from memory
-
     def _collect_stats(self, index, row):
         # Collect stats about the alignment #
         if type(row) == str:
@@ -610,8 +752,6 @@ def indices(lst, element):
         except ValueError:
             return result
         result.append(offset)
-
-
 def read_scoremat(fnam):
     # Read rows and columns into matrix:
     mat = list()
